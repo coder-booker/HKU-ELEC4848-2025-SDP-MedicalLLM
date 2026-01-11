@@ -1,0 +1,7 @@
+base:
+  api_key: "XiJ2_6IaT9aDlPaniHn99cS5drXHyTWeny8A9sopnK4"
+  base_url: "https://api.poe.com/v1"
+
+model:
+  - "gpt-5.1"
+
