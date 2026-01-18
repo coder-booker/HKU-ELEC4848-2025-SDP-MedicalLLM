@@ -3,23 +3,26 @@ import asyncio
 import os
 from typing import List, Optional
 
-from . import (
-    ContextManager,
-    PoeAPIClient,
-    PoeAPIConfig,
-    PoeChatbotConfig,
+from .schemas import (
     PoeChatbotModel,
-    TaskConfig,
-    TaskType,
-    Task,
-    WorkflowConfig,
-    WorkflowEngine,
+    PoeChatbotConfig,
     LanguageType,
+    PromptType,
+    PromptTemplate,
+    ConversationMessageRole,
+    ConversationMessage,
+    TaskType,
+    TaskConfig,
+    TaskContext,
+    WorkflowConfig,
 )
+from .Service.workflow import Workflow
 
+from .Infrastructure import PoeClient
 
+# 理论上是从前端传入的
 # 示例：定义任务配置（使用 SELF_REFINE 模式）
-def build_task_config(language: LanguageType) -> List[TaskConfig]:
+def _temp_get_task_config() -> List[TaskConfig]:
     
     # 获得聊天机器人配置
     chatbot_config = PoeChatbotConfig(
@@ -38,42 +41,25 @@ def build_task_config(language: LanguageType) -> List[TaskConfig]:
             timeout=60,
         )
     ]
-
-
-async def main():
-    """主函数示例。"""
-    # 从环境变量获取 API key（或直接设置）
-    api_key = os.getenv("POE_API_KEY", "YOUR_API_KEY")
-    if api_key == "YOUR_API_KEY":
-        print("Warning: Please set POE_API_KEY environment variable or update the code.")
-
-    # 创建 Poe API 配置和客户端
-    poe_api_config = PoeAPIConfig(api_key=api_key)
-    poe_client = PoeAPIClient(poe_api_config)
-
-    # 获取语言
-    language = "en"
     
-    # 构建任务配置列表
-    task_config_list = build_task_config(language)
+async def _temp_create_and_run_workflow(poe_client: PoeClient):
 
-    # 定义工作流配置
-    workflow_config = WorkflowConfig(
-        workflow_id="example_workflow",
-        name="Example Medical QA Workflow",
-        task_config_list=task_config_list,
-        language=language,
-    )
-    
-    # 创建工作流引擎
-    engine = WorkflowEngine(poe_client, context_manager)
+    task_config_list = _temp_get_task_config()
 
-    # 示例医疗问题
     medical_question = """
     A 45-year-old patient presents with chest pain that started 2 hours ago. 
     The pain is described as crushing and radiates to the left arm. 
     What are the potential diagnoses and what immediate steps should be taken?
     """
+
+    workflow_config = WorkflowConfig(
+        id="example_workflow",
+        name="Example Medical QA Workflow",
+        task_config_list=task_config_list,
+        poe_client = poe_client,
+        initial_question=medical_question,
+    )
+    workflow = Workflow(workflow_config)
 
     print("=" * 60)
     print("Running Medical LLM Workflow")
@@ -81,13 +67,10 @@ async def main():
     print(f"Question: {medical_question.strip()}")
     print()
 
-    # 编织，运行工作流
+    # 运行工作流
     try:
         # ------------------------------------------------
-        tasks = engine.build_tasks(workflow_config)
-        workflow_context = await engine.run_workflow(
-            tasks, medical_question
-        )
+        workflow_context = await workflow.fire()
         # ------------------------------------------------
 
         # 打印结果
@@ -104,6 +87,11 @@ async def main():
     except Exception as e:
         print(f"Error occurred: {e}")
         raise
+
+
+async def main():
+    await _temp_create_and_run_workflow()
+    
 
 
 if __name__ == "__main__":
