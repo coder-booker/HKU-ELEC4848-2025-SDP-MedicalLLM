@@ -33,11 +33,6 @@ class PoeClient:
         Returns:
             模型返回的完整文本响应
         """
-        if fp is None:
-            raise ImportError(
-                "fastapi-poe is required. Install it with: pip install fastapi-poe"
-            )
-        
         # 将 ConversationMessage 转换为 fastapi_poe.ProtocolMessage
         fp_messages = [
             fp.ProtocolMessage(role=msg.role, content=msg.content) for msg in messages

@@ -12,7 +12,11 @@ from .models import (
     TaskConfig,
     TaskContext,
     TaskRecord,
+    BenchmarkConfig,
+    BenchmarkType,
+    MedQABenchmarkProtocal,
     WorkflowConfig,
+    WorkflowContextPort,
 )
 
 __all__ = [
@@ -28,6 +32,10 @@ __all__ = [
     "TaskConfig",
     "TaskContext",
     "TaskRecord",
+    "BenchmarkConfig",
+    "BenchmarkType",
+    "MedQABenchmarkProtocal",
     "WorkflowConfig",
+    "WorkflowContextPort",
 ]
 

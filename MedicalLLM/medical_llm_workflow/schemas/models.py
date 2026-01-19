@@ -1,7 +1,8 @@
 """数据模型定义模块，使用 dataclasses 和 Enum 定义所有配置和上下文结构。"""
 from dataclasses import dataclass, field
+import uuid
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Protocol
 from pydantic import BaseModel, Field
 
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 # Poe
 class PoeChatbotModel(Enum):
     """Poe 聊天机器人模型枚举。"""
+    EMPTY_MODEL = "empty_model" # 占位符模型
     GPT_4_1 = "GPT-4.1"
     GPT_5_1 = "GPT-5.1"
     # 可根据需要添加更多模型
@@ -41,8 +43,10 @@ class PromptType(Enum):
 
 class PromptTemplate(BaseModel):    # TODO: 这个模板的model定义其实不太一致，这里的定义是类本身，而非 param，需要再调整
     """提示词模板。"""
-    system: str
-    user: str
+    # system: str
+    # user: str
+    text: str
+    parameters: Optional[Dict[str, str]] = None # for 模板参数填入
     tools: Optional[List[str]] = None
 
 
@@ -52,16 +56,22 @@ class ConversationMessageRole(Enum):
     SYSTEM = "system"
     USER = "user"
     ERROR = "error"
+    QUESTION = "question"
     
 class ConversationMessage(BaseModel): # TODO：之后可以配置化，让重复内容从一个唯一池子中获取
     """对话消息。"""
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
     role: ConversationMessageRole
     content: str
+    
+    def __str__(self):
+        return f"[{self.id}]({self.role.value}):\n\t{self.content}"
 
 
 
 # Task
 class TaskType(Enum):
+    PLAIN_TEXT = "plain_text" # 纯文本任务，仅用于传递文本
     SINGLE_AGENT = "single_agent"
     SELF_REFINE = "self_refine"
     # 后续可扩展：SELF_CONSISTENCY, MULTI_AGENT 等
@@ -71,30 +81,60 @@ class TaskContext(BaseModel):
     output: List[ConversationMessage]
 
 class TaskConfig(BaseModel):
-    """前端传入的任务配置。"""
-    id: str
+    """任务配置。"""
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
     type: TaskType
-    context: TaskContext
+    # context: TaskContext # TODO: 用户可以设定上下文
     
     chatbot_config: PoeChatbotConfig
     # language: LanguageType = LanguageType.EN # 继承但可以覆盖工作流的语言设置
     max_retries: int = 3
     timeout: int = 60
     
-    prompt: Optional[PromptTemplate] = None # will be dynamically generated
+    prompt_template: Optional[PromptTemplate] = None # TODO: 适配
+    # prompt: Optional[PromptTemplate] = None # TODO：will be dynamically generated
+
+class PlainTextTaskConfig(TaskConfig):
+    """纯文本任务配置。"""
+    type: TaskType = Field(default=TaskType.PLAIN_TEXT, const=True)
+    prompt_template: PromptTemplate
 
 class TaskRecord(BaseModel):
     """记录在工作流上下文中的任务执行结果。"""
     task_config: TaskConfig
     task_context: TaskContext
 
+
+
+# Benchmark
+class BenchmarkType(Enum):
+    MED_QA = "med_qa"
+    # TODO: 之后可以添加更多基准测试类型
+class BenchmarkConfig(BaseModel):
+    id: BenchmarkType
+    name: str
+    num_of_questions: int = 10
+
+class MedQABenchmarkProtocal(BaseModel):
+    """MedQA 基准测试协议。"""
+    question: str
+    options: List[str] = Field(..., min_items=4, max_items=4) # 四个选项
+    answer: str  # 正确答案
+
+
 # Workflow
 class WorkflowConfig(BaseModel):
     """工作流配置。"""
-    id: str
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str
-    task_config_list: List[TaskConfig]
-    language: LanguageType = LanguageType.EN # 整条工作流的语言
+    task_config_list: Optional[List[TaskConfig]] # 按顺序执行的任务列表
+    benchamrk_config_list: Optional[List[BenchmarkConfig]]
+    # language: LanguageType = LanguageType.EN # 整条工作流的语言
+class WorkflowContextPort(Protocol):
+    def get_previous_task_record(self, task_id: str) -> TaskRecord: ...
+    def append_task_record(self, record: TaskRecord) -> None: ...
+    def get_task_record(self, task_id: str) -> TaskRecord: ...
+    def get_all_records(self) -> List[TaskRecord]: ...
 
 # class WorkflowContext:
 #     """工作流上下文，存储整个工作流的执行状态。"""

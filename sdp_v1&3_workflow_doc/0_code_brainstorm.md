@@ -262,3 +262,10 @@
 
 # 18/01
 - poe client 先用单例模式
+
+
+# 19/01
+- 过一遍整个基础流程就可以开测了
+- 还得建立一个简易的 benchmark protocal
+
+- 现在的做法是 纯文本 task，但多 task 需要分叉，需要设计协议（统一 or map）和分叉代码（if or map）

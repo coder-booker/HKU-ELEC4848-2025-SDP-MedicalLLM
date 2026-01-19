@@ -1,6 +1,5 @@
 """主程序示例，演示如何使用医疗 LLM 工作流框架。"""
 import asyncio
-import os
 from typing import List, Optional
 
 from .schemas import (
@@ -14,74 +13,92 @@ from .schemas import (
     TaskType,
     TaskConfig,
     TaskContext,
+    BenchmarkConfig,
+    BenchmarkType,
+    MedQABenchmarkProtocal,
     WorkflowConfig,
 )
 from .Service.workflow import Workflow
 
-from .Infrastructure import PoeClient
 
-# 理论上是从前端传入的
+# TODO: 理论上是从前端传入的
 # 示例：定义任务配置（使用 SELF_REFINE 模式）
 def _temp_get_task_config() -> List[TaskConfig]:
     
     # 获得聊天机器人配置
     chatbot_config = PoeChatbotConfig(
         model=PoeChatbotModel.GPT_5_1,
-        temperature=0.7,
-        max_tokens=2048,
     )
     
     return [
         TaskConfig(
-            task_id="medical_qa_task",
-            task_type=TaskType.SELF_REFINE,
-            prompt_type_list=[TaskType.SELF_REFINE],
+            id="medical_qa_task",
+            type=TaskType.SINGLE_AGENT,
             chatbot_config=chatbot_config,
-            max_retries=3,
-            timeout=60,
         )
     ]
+
+# TODO
+def _temp_get_benchmark_config(benchmark_id: BenchmarkType) -> List[BenchmarkConfig]:
+    # hard code for demo
+    config = BenchmarkConfig(
+        id=benchmark_id,
+        name="Sample Benchamrk",
+        num_of_questions=10,
+    )
     
-async def _temp_create_and_run_workflow(poe_client: PoeClient):
+    return [config]
+
+# TODO
+def _temp_get_workflow_config() -> WorkflowConfig:
+    # hard code for demo
+    config = WorkflowConfig(
+        name="Example Medical QA Workflow",
+    )
+    
+    return config
+
+    
+async def _temp_create_and_run_workflow():
 
     task_config_list = _temp_get_task_config()
+    
+    benchamrk_config_list = _temp_get_benchmark_config(BenchmarkType.MED_QA)
 
-    medical_question = """
-    A 45-year-old patient presents with chest pain that started 2 hours ago. 
-    The pain is described as crushing and radiates to the left arm. 
-    What are the potential diagnoses and what immediate steps should be taken?
-    """
-
-    workflow_config = WorkflowConfig(
-        id="example_workflow",
-        name="Example Medical QA Workflow",
-        task_config_list=task_config_list,
-        poe_client = poe_client,
-        initial_question=medical_question,
-    )
+    workflow_config = _temp_get_workflow_config()
+    workflow_config.task_config_list = task_config_list
+    workflow_config.benchamrk_config_list=benchamrk_config_list
+    
     workflow = Workflow(workflow_config)
 
     print("=" * 60)
     print("Running Medical LLM Workflow")
     print("=" * 60)
-    print(f"Question: {medical_question.strip()}")
+    # print(f"Question: {medical_question.strip()}")
     print()
 
-    # 运行工作流
     try:
-        # ------------------------------------------------
+        
+        # 运行工作流
         workflow_context = await workflow.fire()
-        # ------------------------------------------------
 
         # 打印结果
         print()
         print("=" * 60)
-        print("Workflow Results")
+        print("Workflow Results:")
         print("=" * 60)
-        for task_id, task_context in workflow_context.task_results.items():
-            print(f"\nTask ID: {task_id}")
-            print(f"Input: {task_context.input_text[:100]}...")
-            print(f"Output: {task_context.output[:200]}...")
+        for task_record in workflow_context.get_all_records():
+            task_config: TaskConfig = task_record.task_config
+            task_context: TaskContext = task_record.task_context
+            
+            print(f"\nTask ID: {task_config.id} (Type: {task_config.type.value})")
+            print(f"Input:")
+            for msg in task_context.input:
+                print(f"{msg}")
+        
+            print(f"output:")
+            for msg in task_context.output:
+                print(f"{msg}")
             print("-" * 60)
 
     except Exception as e:
