@@ -46,17 +46,20 @@ class PromptTemplate(BaseModel):    # TODO: 这个模板的model定义其实不�
     # system: str
     # user: str
     text: str
-    parameters: Optional[Dict[str, str]] = None # for 模板参数填入
-    tools: Optional[List[str]] = None
+    parameters: Dict[str, str] = Field(default_factory=dict) # for 模板参数填入
+    tools: List[str] = Field(default_factory=list)
 
 
 
-# Conversation
-class ConversationMessageRole(Enum):
-    SYSTEM = "system"
-    USER = "user"
+# Conversation Message，我们自己拓展的聊天记录模型，实际上不止承载了和 AI 的聊天记录，还承载了一些系统的记录
+class ConversationMessageRole(Enum): # TODO：怎么定义，来确保AI和我们都看得懂
+    # SYSTEM = "system" # TODO：先不考虑 system 角色，这本质上就是 prompt 的一部分而已
+    USER = "user"   # 用户输入，但也可能是上游任务的输出，毕竟我们的目标下没有用户输出这一个角色
+    ASSISTANT = "assistant" # AI 输出
+    
     ERROR = "error"
     QUESTION = "question"
+    
     
 class ConversationMessage(BaseModel): # TODO：之后可以配置化，让重复内容从一个唯一池子中获取
     """对话消息。"""
@@ -65,7 +68,7 @@ class ConversationMessage(BaseModel): # TODO：之后可以配置化，让重复
     content: str
     
     def __str__(self):
-        return f"[{self.id}]({self.role.value}):\n\t{self.content}"
+        return f"[Message-{self.id}]({self.role.value}):\n{self.content}"
 
 
 
@@ -82,7 +85,7 @@ class TaskContext(BaseModel):
 
 class TaskConfig(BaseModel):
     """任务配置。"""
-    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    id: uuid.UUID | str = Field(default_factory=uuid.uuid4) # TODO：临时允许 str ，方便 demo 时手动指定 id
     type: TaskType
     # context: TaskContext # TODO: 用户可以设定上下文
     
@@ -93,10 +96,12 @@ class TaskConfig(BaseModel):
     
     prompt_template: Optional[PromptTemplate] = None # TODO: 适配
     # prompt: Optional[PromptTemplate] = None # TODO：will be dynamically generated
+    
+    connect_to: List[str] = Field(default_factory=list) # TODO：下游任务 id 列表，决定了该任务的输出会传递给哪些下游任务
 
 class PlainTextTaskConfig(TaskConfig):
     """纯文本任务配置。"""
-    type: TaskType = Field(default=TaskType.PLAIN_TEXT, const=True)
+    type: TaskType = Field(default=TaskType.PLAIN_TEXT)
     prompt_template: PromptTemplate
 
 class TaskRecord(BaseModel):
@@ -114,11 +119,12 @@ class BenchmarkConfig(BaseModel):
     id: BenchmarkType
     name: str
     num_of_questions: int = 10
+    select_random: bool = True  # 是否随机抽取问题
 
 class MedQABenchmarkProtocal(BaseModel):
     """MedQA 基准测试协议。"""
     question: str
-    options: List[str] = Field(..., min_items=4, max_items=4) # 四个选项
+    options: List[str] = Field(..., min_items=4, max_items=5) # 四个选项
     answer: str  # 正确答案
 
 
@@ -127,8 +133,9 @@ class WorkflowConfig(BaseModel):
     """工作流配置。"""
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str
-    task_config_list: Optional[List[TaskConfig]] # 按顺序执行的任务列表
-    benchamrk_config_list: Optional[List[BenchmarkConfig]]
+    task_config_list: Optional[List[TaskConfig]] = Field(default_factory=list) # 按顺序执行的任务列表
+    task_connections: Dict[str, List[str]] = Field(default_factory=dict) # 任务连接关系图，key 是上游任务 id ，value 是下游任务 id 列表
+    benchamrk_config_list: List[BenchmarkConfig] = Field(default_factory=list)
     # language: LanguageType = LanguageType.EN # 整条工作流的语言
 class WorkflowContextPort(Protocol):
     def get_previous_task_record(self, task_id: str) -> TaskRecord: ...

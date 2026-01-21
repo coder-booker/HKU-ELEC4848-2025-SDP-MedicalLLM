@@ -1,6 +1,9 @@
 """工作流引擎，负责执行工作流配置。"""
 from typing import Dict
 
+from os import getcwd
+print(getcwd())
+
 from medical_llm_workflow.schemas import WorkflowConfig, ConversationMessageRole, TaskContext
 from medical_llm_workflow.Domain.tasks import TaskFactory
 from medical_llm_workflow.Domain.workflow_context import WorkflowContext
@@ -23,6 +26,7 @@ class Workflow:
         for benchmark_config in benchmark_configs:
             questions = BenchmarkManager.get_text_questions(
                 benchmark_id=benchmark_config.id,
+                random=benchmark_config.select_random,
                 num=benchmark_config.num_of_questions,
             )
             benchmark_questions_map[benchmark_config.id] = questions
@@ -36,13 +40,12 @@ class Workflow:
         # TODO: demo 目前只支持单一 benchmark 和单一 question
         question = list(benchmark_questions_map.values())[0][0]
         plaintext_task_config_for_question = TaskFactory.create_plain_task_config(text=question)
-        self._create_and_execute_task(  # 用 PlainTextTask 把 question 放入工作流上下文
-            task_config=plaintext_task_config_for_question,
-            workflow_context=workflow_context,
-        )
+
+        self.config.task_config_list.insert(0, plaintext_task_config_for_question)  # # 用 PlainTextTask 把 question 放入工作流上下文
         
+        # 执行任务
         for task_config in self.config.task_config_list:
-            self._create_and_execute_task(
+            await self._create_and_execute_task(
                 task_config=task_config,
                 workflow_context=workflow_context,
             )

@@ -3,6 +3,7 @@ from typing import List
 
 from medical_llm_workflow.Infrastructure import PoeClient, get_client_instance
 from medical_llm_workflow.schemas import (
+    ConversationMessageRole,
     ConversationMessage,
     TaskConfig,
     TaskContext,
@@ -38,42 +39,46 @@ class Task:
             - 制作输入提示词
             - 访问 api
             - 处理响应，保存为 TaskContext
+            - 保存到工作流上下文
 
         Args:
-            workflow_context: 工作流上下文
+            workflow_context_port: 工作流上下文接口
 
         Returns:
             任务上下文，包含执行结果
         """
-
+        messages: List[ConversationMessage] = []
+        
         # 获取上下文
         prev_task_record = workflow_context_port.get_previous_task_record(self.config.id)
-        prev_context = prev_task_record.task_context
-        # 编排 prompt 与上下文
-        # prompt_template = prompt_factory(self.config.type) # TODO：要如何获取合适的 template 呢？不一定需要一个 factory ，原本用 factory 是为了组装 prompt，但现在看来应该可以放在 Task 内进行
-        # prompt = self._fill_in_prompt(prompt_template, prev_context)
-        messages: List[ConversationMessage] = []
-        for prev_output in prev_context.output:
-            prompt = prev_output  # TODO：先简单处理，直接用上一个任务的输出作为 prompt
-            # 组合好，给 chatbot 看
-            messages.append(ConversationMessage(role="user", content=prompt)) # TODO：system prompt 要怎么处理？分为一个额外的 message 还是嵌入 user message？
-
+        if prev_task_record:
+            prev_context = prev_task_record.task_context
+            # 编排 prompt 与上下文
+            # prompt_template = prompt_factory(self.config.type) # TODO：要如何获取合适的 template 呢？不一定需要一个 factory ，原本用 factory 是为了组装 prompt，但现在看来应该可以放在 Task 内进行
+            # prompt = self._fill_in_prompt(prompt_template, prev_context)
+            
+            for prev_output in prev_context.output:
+                prompt = prev_output # TODO：先简单处理，直接用上一个任务的输出作为 prompt，之后还得考虑怎么告诉 AI 之前做过什么
+                # 组合好，给 chatbot 看
+                messages.append(ConversationMessage(role=ConversationMessageRole.USER, content=prompt)) # TODO：system prompt 要怎么处理？分为一个额外的 message 还是嵌入 user message？
+            
         # 进行问答
         try:
-            response = await self.poe_client.call_chatbot(
+            response = await self.poe_client.call_chatbot(  # TODO: 我们应该把 message 清洗好再传进去，因为 role 在不同供应商下有不同的规范
                 messages, self.config.chatbot_config
             )
+            res_message = ConversationMessage(role=ConversationMessageRole.ASSISTANT, content=response)
         except Exception as e:
             # 让上层处理异常
-            response = ConversationMessage(role="error", content=f"Error: {str(e)}")
+            res_message = ConversationMessage(role=ConversationMessageRole.ERROR, content=f"Error: {str(e)}")
         
         # 组织输出并保存记录
         context_for_workflow = TaskContext(
             input=messages,
-            output=[response],
+            output=[res_message],
         )
         record = TaskRecord(
-            config=self.config,
+            task_config=self.config,
             task_context=context_for_workflow,
         )
         workflow_context_port.append_task_record(record)

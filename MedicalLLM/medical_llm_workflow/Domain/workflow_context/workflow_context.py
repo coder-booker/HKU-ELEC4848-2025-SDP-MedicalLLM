@@ -32,7 +32,7 @@ class WorkflowContext:
 
         Args:
             context: 工作流上下文
-            role: 消息角色（"system", "user", "assistant"）
+            role: 消息角色
             content: 消息内容
         """
         self.conversation_history.append(record.task_config.id, record)
@@ -41,7 +41,7 @@ class WorkflowContext:
         return self.conversation_history.get(task_id)
     
     def get_all_records(self) -> List[TaskRecord]:
-        return self.conversation_history.values()
+        return self.conversation_history.get_all()
 
     # @staticmethod
     # def truncate_history(

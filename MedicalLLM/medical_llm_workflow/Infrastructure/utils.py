@@ -14,16 +14,24 @@ class LinkedHashList:
         self._head: Optional[Node] = None
         self._tail: Optional[Node] = None
 
-    def get(self, key: Any) -> Node:
-        return self._index[key]   # O(1)
+    def get(self, key: Any) -> Optional[Node]:
+        return self._index.get(key)   # O(1)
     
     def get_prev(self, key: Any) -> Optional[Node]:
-        n = self._index[key]
-        return n.prev  # O(1)
+        n = self.get(key)
+        return n.prev if n is not None else None  # O(1)
     
     def get_next(self, key: Any) -> Optional[Node]:
-        n = self._index[key]
-        return n.next  # O(1)
+        n = self.get(key)
+        return n.next if n is not None else None  # O(1)
+
+    def get_all(self) -> list[Any]:
+        values = []
+        current = self._head
+        while current is not None:
+            values.append(current.value)
+            current = current.next
+        return values
 
     # def neighbors(self, key: Any):
     #     n = self._index[key]

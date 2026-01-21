@@ -40,17 +40,20 @@ class PoeClient:
 
         # 调用 Poe API
         chunks = []
-        try:
-            async for part in fp.stream_request(
-                fp.QueryRequest(query=fp_messages),
-                bot_name=chatbot_config.model.value,
-                api_key=self.config.api_key,
-            ):
-                if part.text:
-                    chunks.append(part.text)
-        except Exception as e:
-            raise RuntimeError(f"Failed to call Poe API: {e}") from e
+        # try:
+        #     async for part in fp.stream_request(
+        #         fp.QueryRequest(query=fp_messages),
+        #         bot_name=chatbot_config.model.value,
+        #         api_key=self.config.api_key,
+        #     ):
+        #         if part.text:
+        #             chunks.append(part.text)
+        # except Exception as e:
+        #     raise RuntimeError(f"Failed to call Poe API: {e}") from e
 
+        # test
+        chunks.append("This is a test response from PoeClient.")
+        
         return "".join(chunks)
 
 

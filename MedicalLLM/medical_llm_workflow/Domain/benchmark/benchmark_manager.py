@@ -8,9 +8,9 @@ from .MedQA.medqa_benchmark import MedQABenchmark
 class BenchmarkManager:
     
     @staticmethod
-    def get_json_questions(benchmark_id: BenchmarkType, num: int):
+    def get_json_questions(benchmark_id: BenchmarkType, random: bool, num: int):
         if benchmark_id == BenchmarkType.MED_QA:
-            questions: List[MedQABenchmarkProtocal] = MedQABenchmark.get_questions(num=num)
+            questions: List[MedQABenchmarkProtocal] = MedQABenchmark.get_json_questions(random=random, num=num)
             return questions
         
         # TODO: 可以添加更多的 benchmark 类型
@@ -18,9 +18,9 @@ class BenchmarkManager:
         raise ValueError(f"Unknown benchmark ID: {benchmark_id}")
     
     @staticmethod
-    def get_text_questions(benchmark_id: BenchmarkType, num: int):
+    def get_text_questions(benchmark_id: BenchmarkType, random: bool, num: int):
         if benchmark_id == BenchmarkType.MED_QA:
-            questions: List[str] = MedQABenchmark.get_text_questions(num=num)
+            questions: List[str] = MedQABenchmark.get_text_questions(random=random, num=num)
             return questions
         
         # TODO: 可以添加更多的 benchmark 类型

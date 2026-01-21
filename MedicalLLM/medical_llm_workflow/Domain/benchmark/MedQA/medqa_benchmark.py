@@ -25,7 +25,10 @@ class MedQABenchmark:
         json_data_list = []
         with open(r"D:\learning\SDP\MedicalLLM\dataset\med\data_clean\questions\US\train.jsonl", "r", encoding="utf-8") as f:
             for line in f:
-                json_data_list.append(json.load(line))
+                parsed_line = json.loads(line)
+                # print(parsed_line)
+                # exit(0)
+                json_data_list.append(parsed_line)
         
         selected_json_data_list = json_data_list[:num] if not random else rd.sample(json_data_list, num)
         
