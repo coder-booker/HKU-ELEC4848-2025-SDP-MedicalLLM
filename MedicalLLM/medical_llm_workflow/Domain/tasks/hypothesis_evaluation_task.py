@@ -1,6 +1,6 @@
 """任务模块，定义可执行的原子任务。"""
 from typing import List
-
+from .task import Task
 from medical_llm_workflow.Infrastructure import PoeClient, get_client_instance
 from medical_llm_workflow.schemas import (
     ConversationMessageStatus,
@@ -13,23 +13,18 @@ from medical_llm_workflow.schemas import (
 )
 
 
-class Task:
-    """原子任务，表示一个可执行的工作流步骤。"""
-
-    def __init__(
-        self,
-        config: TaskConfig,
-    ):
-        """
-        初始化任务。
-
-        Args:
-            config: 任务配置
-            poe_client: Poe API 客户端
-            context_manager: 上下文管理器
-        """
-        self.config = config
-        self.poe_client: PoeClient = get_client_instance()
+class HypothesisEvaluationTask(Task):
+    """假设评估任务，基于假设生成结果生成诊断假设。"""
+    
+    def get_required_prompt(self) -> str:
+        """获取任务所需的提示词模板。"""
+        # TODO: 之后可以根据任务类型动态获取
+        prompt = '''
+You are the “Hypothesis Evaluation” agent in a clinical reasoning workflow. Your job is to compare and evaluate the candidate hypotheses and map them to the provided answer options, then select the final best answer.
+You can find the input patient case, the Problem Representation result, and Hypothesis Generation result in previous messages
+Output the final answer as the following format:
+Final Answer: {<your selected answer option letter>}'''
+        return prompt
     
     def get_required_messages(
         self,
@@ -50,9 +45,17 @@ class Task:
                     # TODO：先简单处理，直接用所有此前的输出作为 prompt，之后还得考虑怎么告诉 AI 之前做过什么，
                     #   例如 system prompt 之类的是狗分为一个额外的 message 还是嵌入 user message
                     messages.append(prev_output)
+        
+        # 制作任务所需的提示词，嵌入到 messages 中
+        task_prompt = self.get_required_prompt()
+        system_message = ConversationMessage(
+            role=ConversationMessageRole.SYSTEM,
+            content=task_prompt,
+        )
+        messages.append(system_message)
 
         return messages
-    
+
     async def execute(
         self,
         workflow_context_port: WorkflowContextPort, # TODO：之后可能可以不通过 workflow_context 传入，而是 TaskConfig 包含或者使用类似单例的方法
@@ -81,7 +84,7 @@ class Task:
             res_message = ConversationMessage(
                 role=ConversationMessageRole.BOT,
                 content=response,
-                status=ConversationMessageStatus.NORMAL,
+                status=ConversationMessageStatus.COMPLETED, # TODO: 目前假设评估任务成功即为完成
             )
         except Exception as e:
             # 让上层处理异常
@@ -103,75 +106,3 @@ class Task:
         workflow_context_port.append_task_record(record)
         
         return record
-
-        # # 更新工作流上下文
-        # assistant_msg = ConversationMessage(
-        #     role="assistant", content=response
-        # )
-        # self.context_manager.add_message(
-        #     workflow_context, assistant_msg.role, assistant_msg.content
-        # )
-        # workflow_context.task_results[task_context.task_id] = task_context
-
-        # return task_context
-
-    # TODO
-    # def _fill_in_prompt(
-    #     self,
-    #     prompt_template: PromptTemplate,
-    #     context: TaskContext,
-    # ) -> str:
-    #     """
-    #     填充用户提示词模板，以制作 message 。
-
-    #     Args:
-    #         user_input: 用户输入
-    #         variables: 模板变量字典
-
-    #     Returns:
-    #         渲染后的提示词
-    #     """
-    #     template = self.config.prompt_template.user
-    #     # 简单的字符串替换
-    #     try:
-    #         # 先替换 input
-    #         rendered = template.replace("{input}", user_input)
-    #         # 再替换其他变量
-    #         for key, value in variables.items():
-    #             rendered = rendered.replace(f"{{{key}}}", str(value))
-    #         return rendered
-    #     except Exception as e:
-    #         # 如果替换失败，返回原始模板 + 输入
-    #         return f"{template}\n\n{user_input}"
-    
-    # TODO
-    # def _prepare_artifact(
-    #     self,
-    #     previous_artefact: TaskArtifact,
-    #     task_output: TaskOutput
-    # ) -> TaskArtifact:
-    #     """
-    #     准备任务产物，供下游任务使用。
-
-    #     Args:
-    #         task_output: 任务输出
-
-    #     Returns:
-    #         任务产物
-    #     """
-    #     # 根据任务类型准备不同的 artifact
-    #     if self.config.task_type == "ordinary":
-    #         return TaskArtifact.ORDINARY(CASE=task_output.output or "")
-    #     elif self.config.task_type == "self_refine":
-    #         # 这里假设 output 格式为 "INITIAL_ANSWER\nCRITIQUE\nFINAL_ANSWER"
-    #         parts = (task_output.output or "").split("\n", 2)
-    #         initial_answer = parts[0] if len(parts) > 0 else ""
-    #         critique = parts[1] if len(parts) > 1 else ""
-    #         final_answer = parts[2] if len(parts) > 2 else ""
-    #         return TaskArtifact.SELF_REFINE_THIRD(
-    #             CASE=task_output.output or "",
-    #             INITIAL_ANSWER=initial_answer,
-    #             CRITIQUE=critique,
-    #         )
-    #     else:
-    #         raise ValueError(f"Unknown task type: {self.config.task_type}")

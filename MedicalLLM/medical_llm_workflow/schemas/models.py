@@ -52,23 +52,28 @@ class PromptTemplate(BaseModel):    # TODO: 这个模板的model定义其实不�
 
 
 # Conversation Message，我们自己拓展的聊天记录模型，实际上不止承载了和 AI 的聊天记录，还承载了一些系统的记录
-class ConversationMessageRole(Enum): # TODO：怎么定义，来确保AI和我们都看得懂
-    # SYSTEM = "system" # TODO：先不考虑 system 角色，这本质上就是 prompt 的一部分而已
-    USER = "user"   # 用户输入，但也可能是上游任务的输出，毕竟我们的目标下没有用户输出这一个角色
-    ASSISTANT = "assistant" # AI 输出
-    
-    ERROR = "error"
-    QUESTION = "question"
-    
+class ConversationMessageStatus(Enum):
+    NORMAL = "normal"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+# 供 fast api 使用的 role 类型
+class ConversationMessageRole(Enum):
+    # system, user, bot, tool
+    SYSTEM = "system"
+    USER = "user"
+    BOT = "bot"
+    TOOL = "tool"
     
 class ConversationMessage(BaseModel): # TODO：之后可以配置化，让重复内容从一个唯一池子中获取
     """对话消息。"""
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     role: ConversationMessageRole
     content: str
+    status: ConversationMessageStatus = ConversationMessageStatus.NORMAL
     
     def __str__(self):
-        return f"[Message-{self.id}]({self.role.value}):\n{self.content}"
+        return f"[Message-{self.id}]({self.role})({self.status}):\n{self.content}"
 
 
 
@@ -79,6 +84,17 @@ class TaskType(Enum):
     SELF_REFINE = "self_refine"
     # 后续可扩展：SELF_CONSISTENCY, MULTI_AGENT 等
 
+class TaskStepType(Enum): # 特殊状态，用来区分临床推理各步骤
+    # SYSTEM = "system" # TODO：先不考虑 system 角色，这本质上就是 prompt 的一部分而已
+    QUESTION = "question"
+    
+    PROBLEM_REPRESENTATION = "problem_representation" # 问题表述
+    HYPOTHESIS_GENERATION = "hypothesis_generation" # 假设生成
+    HYPOTHESIS_EVALUATION = "hypothesis_evaluation" # 假设评估，包含了最终答案
+    
+    DEFAULT= "default" # 默认值，暂时理解为占位符
+    # ASSISTANT = "assistant" # AI 输出 TODO 不知道需不需要，先保留
+
 class TaskContext(BaseModel):
     input: List[ConversationMessage]
     output: List[ConversationMessage]
@@ -87,6 +103,7 @@ class TaskConfig(BaseModel):
     """任务配置。"""
     id: uuid.UUID | str = Field(default_factory=uuid.uuid4) # TODO：临时允许 str ，方便 demo 时手动指定 id
     type: TaskType
+    step_type: TaskStepType = TaskStepType.DEFAULT
     # context: TaskContext # TODO: 用户可以设定上下文
     
     chatbot_config: PoeChatbotConfig
@@ -116,7 +133,7 @@ class BenchmarkType(Enum):
     MED_QA = "med_qa"
     # TODO: 之后可以添加更多基准测试类型
 class BenchmarkConfig(BaseModel):
-    id: BenchmarkType
+    id: BenchmarkType   # TODO：这个 id 其实有些迷惑性。这并不是唯一标识符，而是单例下的类型标识符，可以考虑改名
     name: str
     num_of_questions: int = 10
     select_random: bool = True  # 是否随机抽取问题
@@ -133,12 +150,14 @@ class WorkflowConfig(BaseModel):
     """工作流配置。"""
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str
-    task_config_list: Optional[List[TaskConfig]] = Field(default_factory=list) # 按顺序执行的任务列表
-    task_connections: Dict[str, List[str]] = Field(default_factory=dict) # 任务连接关系图，key 是上游任务 id ，value 是下游任务 id 列表
+    task_config_list: List[TaskConfig] = Field(default_factory=list) # 按顺序执行的任务列表
     benchamrk_config_list: List[BenchmarkConfig] = Field(default_factory=list)
+    
+    task_connections: Dict[str, List[str]] = Field(default_factory=dict) # 任务连接关系图，key 是上游任务 id ，value 是下游任务 id 列表
     # language: LanguageType = LanguageType.EN # 整条工作流的语言
 class WorkflowContextPort(Protocol):
     def get_previous_task_record(self, task_id: str) -> TaskRecord: ...
+    # def get_all_prev_task_records(self, task_id: str) -> List[TaskRecord]: ...
     def append_task_record(self, record: TaskRecord) -> None: ...
     def get_task_record(self, task_id: str) -> TaskRecord: ...
     def get_all_records(self) -> List[TaskRecord]: ...

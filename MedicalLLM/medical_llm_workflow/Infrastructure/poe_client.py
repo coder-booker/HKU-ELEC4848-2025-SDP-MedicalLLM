@@ -4,6 +4,7 @@ import fastapi_poe as fp
 from os import getenv
 
 from medical_llm_workflow.schemas import ConversationMessage, PoeClientConfig, PoeChatbotConfig
+from medical_llm_workflow.meta_config.meta_config import meta_settings, DebugConfig
 
 
 class PoeClient:
@@ -35,24 +36,29 @@ class PoeClient:
         """
         # 将 ConversationMessage 转换为 fastapi_poe.ProtocolMessage
         fp_messages = [
-            fp.ProtocolMessage(role=msg.role, content=msg.content) for msg in messages
+            fp.ProtocolMessage(role=msg.role.value, content=msg.content) for msg in messages
         ]
 
         # 调用 Poe API
         chunks = []
-        # try:
-        #     async for part in fp.stream_request(
-        #         fp.QueryRequest(query=fp_messages),
-        #         bot_name=chatbot_config.model.value,
-        #         api_key=self.config.api_key,
-        #     ):
-        #         if part.text:
-        #             chunks.append(part.text)
-        # except Exception as e:
-        #     raise RuntimeError(f"Failed to call Poe API: {e}") from e
-
-        # test
-        chunks.append("This is a test response from PoeClient.")
+        if meta_settings.debug == DebugConfig.FAKE_POE:
+            # fake response for debug
+            chunks.append("This")
+            chunks.append(" is")
+            chunks.append(" a")
+            chunks.append(" fake")
+            chunks.append(" response.")
+        else:
+            try:
+                async for part in fp.stream_request(
+                    fp.QueryRequest(query=fp_messages),
+                    bot_name=chatbot_config.model.value,
+                    api_key=self.config.api_key,
+                ):
+                    if part.text:
+                        chunks.append(part.text)
+            except Exception as e:
+                raise RuntimeError(f"Failed to call Poe API: {e}") from e
         
         return "".join(chunks)
 

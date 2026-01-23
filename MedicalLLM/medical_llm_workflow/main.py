@@ -8,6 +8,7 @@ from .schemas import (
     PoeChatbotModel,
     PoeChatbotConfig,
     TaskType,
+    TaskStepType,
     TaskConfig,
     TaskContext,
     BenchmarkConfig,
@@ -28,14 +29,23 @@ def _temp_get_task_config() -> List[TaskConfig]:
     
     return [
         TaskConfig(
-            id="single_agent_1",
+            id="Problem Representation 1",
             type=TaskType.SINGLE_AGENT,
+            step_type=TaskStepType.PROBLEM_REPRESENTATION,
             chatbot_config=chatbot_config,
-            connect_to=["single_agent_2"],
+            connect_to=["Hypothesis Generation 1"],
         ),
         TaskConfig(
-            id="single_agent_2",
+            id="Hypothesis Generation 1",
             type=TaskType.SINGLE_AGENT,
+            step_type=TaskStepType.HYPOTHESIS_GENERATION,
+            chatbot_config=chatbot_config,
+            connect_to=["Hypothesis Evaluation 1"],
+        ),
+        TaskConfig(
+            id="Hypothesis Evaluation 1",
+            type=TaskType.SINGLE_AGENT,
+            step_type=TaskStepType.HYPOTHESIS_EVALUATION,
             chatbot_config=chatbot_config,
         ),
     ]
@@ -45,7 +55,7 @@ def _temp_get_benchmark_config() -> List[BenchmarkConfig]:
     
     # hard code for demo
     benchmark_id = BenchmarkType.MED_QA
-    num_of_questions = 1
+    num_of_questions = 10
     config = BenchmarkConfig(
         id=benchmark_id,
         name="Sample Benchamrk",

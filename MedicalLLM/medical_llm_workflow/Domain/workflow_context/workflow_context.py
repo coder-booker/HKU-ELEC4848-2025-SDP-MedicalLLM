@@ -25,6 +25,24 @@ class WorkflowContext:
         """
         prev_task_context = self.conversation_history.get_prev(task_id)
         return prev_task_context
+    
+    # def get_all_prev_task_records(self, task_id: str) -> List[TaskRecord]:
+    #     """
+    #     获取当前对话历史（返回拷贝）。
+
+    #     Args:
+    #         context: 工作流上下文
+
+    #     Returns:
+    #         对话消息列表的拷贝
+    #     """
+    #     all_prev_task_contexts = []
+    #     all_records: List[TaskRecord] = self.conversation_history.get_all()
+    #     for record in all_records:    # TODO：先假设所有消息都是单线性且不重复的
+    #         if record.task_config.id == task_id:
+    #             break
+    #         all_prev_task_contexts.append(record)
+    #     return all_prev_task_contexts
 
     def append_task_record(self, record: TaskRecord) -> None:
         """
