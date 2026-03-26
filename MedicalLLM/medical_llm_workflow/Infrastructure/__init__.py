@@ -1,8 +1,20 @@
 """API 模块，导出 PoeAPIClient。"""
-from .poe_client import (
+from .LLM_client import (
+    BaseLLMClient,
     PoeClient,
-    get_client_instance,
+    GLMClient,
+    ChatbotType,
+    ClientFactory,
 )
 from .utils import LinkedHashList
-__all__ = ["PoeClient", "get_client_instance", "LinkedHashList"]
+
+# 统一导出基础设施层核心对象。
+__all__ = [
+    "BaseLLMClient",
+    "PoeClient",
+    "GLMClient",
+    "ChatbotType",
+    "ClientFactory",
+    "LinkedHashList",
+]
 

@@ -14,6 +14,17 @@
     - 各类 schemas 配置好
 - 继续开发最小 mvp
     - MedQA benchmark
-    - 几种简单的 workflow
-    - 复现一两篇 paper 的工作流
+    - 几种简单的 recipe
 - 之后可以考虑用热门的库来实现类似效果，看看够不够好用
+
+
+
+- 有一个能看的前端
+- 有能用的 benchmark
+
+# comment from Prof
+- more on recipe part, cause component part requires extra validation
+- more on workflow comparison part
+- benchmark already very useful
+
+

@@ -1,15 +1,19 @@
-"""上下文管理器，负责管理工作流中的对话历史。"""
+"""工作流上下文容器。
+
+该模块维护任务执行历史，并提供查询/追加接口，
+供任务执行器在不同步骤之间共享消息与结果。
+"""
 from typing import List, Dict
 
-from medical_llm_workflow.schemas import TaskContext, TaskRecord
+from medical_llm_workflow.Domain.tasks.models import TaskRecord
 from medical_llm_workflow.Infrastructure import LinkedHashList
-
 
 
 class WorkflowContext:
     """上下文管理器，同时提供用于操作对话历史的工具。"""
     
     def __init__(self, workflow_id):
+        """初始化工作流上下文与有序历史容器。"""
         self.workflow_id = workflow_id
         self.conversation_history = LinkedHashList()
 
@@ -23,8 +27,13 @@ class WorkflowContext:
         Returns:
             对话消息列表的拷贝
         """
+        # 基于链表索引定位指定任务的上一个记录。
         prev_task_context = self.conversation_history.get_prev(task_id)
         return prev_task_context
+    
+    def last_task_record(self) -> TaskRecord:
+        """获取最后一条记录（返回拷贝）。"""
+        return self.conversation_history.get_tail()
     
     # def get_all_prev_task_records(self, task_id: str) -> List[TaskRecord]:
     #     """
@@ -53,12 +62,15 @@ class WorkflowContext:
             role: 消息角色
             content: 消息内容
         """
+        # 以任务 id 为键写入，既保序也支持 O(1) 索引。
         self.conversation_history.append(record.task_config.id, record)
 
     def get_task_record(self, task_id: str) -> TaskRecord:
+        """按任务 id 获取单条记录。"""
         return self.conversation_history.get(task_id)
     
     def get_all_records(self) -> List[TaskRecord]:
+        """按执行顺序返回所有任务记录。"""
         return self.conversation_history.get_all()
 
     # @staticmethod

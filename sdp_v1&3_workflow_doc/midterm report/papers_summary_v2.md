@@ -2,7 +2,7 @@
 ## A级论文：必读（21篇）⭐⭐⭐⭐⭐
 
 ### 1. MedChain: Bridging the Gap Between LLM Agents and Clinical Practice with Interactive Sequence
-**Link**: https://arxiv.org/html/2412.01605v2  
+**Link**: https://arxiv.org/html/2412.01605v2
 **PDF**: https://arxiv.org/pdf/2412.01605  
 **Summary**: 提出包含12,163个临床案例的数据集，覆盖5个关键临床工作流阶段：(1)专科转诊、(2)病史采集、(3)检查、(4)诊断、(5)治疗。强调三个特征：个性化（患者特异性信息）、交互性（动态信息收集）、顺序性（决策依赖前序步骤）。MedChain-Agent框架集成反馈机制和MedCase-RAG模块，平均得分0.5200 vs baseline 0.4156。任务级评估指标包括：专科转诊（准确率+IoU）、病史采集（IoU）、检查（DocLens claim recall）、诊断（5级评分）、治疗（IoU）。
 
@@ -10,13 +10,13 @@
 
 ### 2. LLMEval-Med: A Real-world Clinical Benchmark for Medical LLMs with Physician Validation
 **Link**: https://aclanthology.org/2025.findings-emnlp.263/  
-**PDF**: https://aclanthology.org/2025.findings-emnlp.263.pdf  
+**PDF**: https://aclanthology.org/2025.findings-emnlp.263.pdf
 **Summary**: EMNLP 2025 Findings论文，提出覆盖5个核心医学领域的2,996个问题的benchmark：医学知识、医学语言理解、医学推理、医学文本生成、医学安全伦理。基于真实EHR和专家设计的临床场景。设计自动评估pipeline，将专家开发的checklist整合到LLM-as-Judge框架中。评分标准0-5分，4分及以上视为临床可用。通过人机一致性分析验证机器评分，动态优化checklist和prompt。解决了现有benchmark在问题设计（多为多选题）、数据来源（非真实临床场景）和评估方法（复杂推理评估不足）方面的局限。
 
 ---
 
 ### 3. MedAgentBench: A Realistic Virtual EHR Environment to Benchmark Medical LLM Agents
-**Link**: https://arxiv.org/html/2501.14654v2  
+**Link**: https://arxiv.org/html/2501.14654v2
 **GitHub**: https://github.com/stanfordmlgroup/MedAgentBench  
 **Summary**: 首个在医疗记录环境中评估LLM agent能力的comprehensive evaluation suite，已被NEJM AI接收。不同于传统医疗AI benchmark专注问答，MedAgentBench挑战AI agent完成300个真实临床相关任务，需要与FHIR-compliant环境交互。基于Stanford STARR项目的100个去标识化患者案例（785,207条记录）。评估两类任务：Query任务（信息检索）85.33%成功率 vs Action任务（执行操作）54.00%成功率。Claude 3.5 Sonnet v2达到69.67%成功率，但距离临床可用仍有差距。
 
@@ -333,6 +333,10 @@
 **Summary**: AMIA 2025论文。使用LLM辅助分析临床指南依从性和错误。LLM4Rules framework：(1)解析clinical guidelines成structured rules、(2)分析EMR数据识别guideline violations、(3)LLM推理分析violation原因（合理偏离 vs 医疗错误）。在3个临床指南（糖尿病管理、抗生素使用、VTE预防）上验证。Violation detection accuracy 92.3%。Reasoning质量由临床医生评估：clinical soundness 87.6%。讨论LLM在医学伦理风险识别和quality improvement中的应用。
 
 ---
+
+
+
+
 
 ## C级论文：参考阅读（18篇）⭐⭐⭐☆☆
 

@@ -1,61 +1,31 @@
-"""主程序示例，演示如何使用医疗 LLM 工作流框架。"""
+"""示例入口脚本。
+
+该文件用于演示如何拼装一个最小可运行的医疗推理工作流：
+1) 构建任务链配置；
+2) 构建 benchmark 配置；
+3) 创建并执行 Workflow；
+4) 打印每个任务的输入输出记录。
+"""
 import asyncio
 from typing import List
-import os
-print(os.getcwd())
-
 from .schemas import (
-    PoeChatbotModel,
-    PoeChatbotConfig,
-    TaskType,
-    TaskStepType,
     TaskConfig,
     TaskContext,
     BenchmarkConfig,
     BenchmarkType,
     WorkflowConfig,
 )
+from .Domain.recipes import RecipeFactory, RecipeType
 from .Service.workflow import Workflow
+from .Infrastructure.LLM_client.models import PoeChatbotConfig, PoeChatbotModel
 
 
-
-# TODO: 理论上是从前端传入的
-# 示例：定义任务配置（使用 SELF_REFINE 模式）
-def _temp_get_task_config() -> List[TaskConfig]:
-    
-    chatbot_config = PoeChatbotConfig(
-        model=PoeChatbotModel.GPT_5_1,
-    )
-    
-    return [
-        TaskConfig(
-            id="Problem Representation 1",
-            type=TaskType.SINGLE_AGENT,
-            step_type=TaskStepType.PROBLEM_REPRESENTATION,
-            chatbot_config=chatbot_config,
-            connect_to=["Hypothesis Generation 1"],
-        ),
-        TaskConfig(
-            id="Hypothesis Generation 1",
-            type=TaskType.SINGLE_AGENT,
-            step_type=TaskStepType.HYPOTHESIS_GENERATION,
-            chatbot_config=chatbot_config,
-            connect_to=["Hypothesis Evaluation 1"],
-        ),
-        TaskConfig(
-            id="Hypothesis Evaluation 1",
-            type=TaskType.SINGLE_AGENT,
-            step_type=TaskStepType.HYPOTHESIS_EVALUATION,
-            chatbot_config=chatbot_config,
-        ),
-    ]
-
-# TODO
 def _temp_get_benchmark_config() -> List[BenchmarkConfig]:
+    """构建 demo 用 benchmark 配置。"""
     
     # hard code for demo
     benchmark_id = BenchmarkType.MED_QA
-    num_of_questions = 10
+    num_of_questions = 5
     config = BenchmarkConfig(
         id=benchmark_id,
         name="Sample Benchamrk",
@@ -66,6 +36,7 @@ def _temp_get_benchmark_config() -> List[BenchmarkConfig]:
 
 # TODO
 def _temp_get_workflow_config() -> WorkflowConfig:
+    """构建 demo 用工作流基础配置。"""
     # hard code for demo
     config = WorkflowConfig(
         name="Example Medical QA Workflow",
@@ -75,19 +46,29 @@ def _temp_get_workflow_config() -> WorkflowConfig:
 
 
 async def _temp_create_and_run_workflow():
+    """组装配置并执行工作流，然后打印完整任务记录。"""
 
-    task_config_list = _temp_get_task_config()
+    # 1) 任务链配置
+    chatbot_config = PoeChatbotConfig(
+        model=PoeChatbotModel.GPT_5_1,
+    )
     
+    recipe = RecipeFactory.get_recipe(RecipeType.MEDICAL_REASONING_3_STEPS)
+    
+    task_config_list = recipe.build_task_configs(chatbot_config)
+    
+    # 2) benchmark 配置
     benchamrk_config_list = _temp_get_benchmark_config()
 
+    # 3) 工作流配置合并
     workflow_config = _temp_get_workflow_config()
     workflow_config.task_config_list.extend(task_config_list)
     workflow_config.benchamrk_config_list.extend(benchamrk_config_list)
     
+    # 4) 创建工作流实例
     workflow = Workflow(workflow_config)
 
     try:
-        
         # 运行工作流
         workflow_context = await workflow.fire()
 
@@ -112,6 +93,7 @@ async def _temp_create_and_run_workflow():
 
 
 async def main():
+    """程序主入口：运行 demo 工作流。"""
     await _temp_create_and_run_workflow()
     
 

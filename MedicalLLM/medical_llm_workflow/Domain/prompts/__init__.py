@@ -1,5 +1,11 @@
-"""工作流引擎模块，导出 WorkflowEngine。"""
-from .prompt_generator import prompt_factory
+"""提示词模块导出入口。"""
+from .prompt_factory import prompt_factory
+from .models import PromptType, PromptTemplate
 
-__all__ = ['prompt_factory']
+# 统一对外暴露提示词工厂函数。
+__all__ = [
+	"prompt_factory",
+	"PromptType",
+	"PromptTemplate",
+]
 

@@ -1,23 +1,29 @@
-"""Poe API 客户端，用于调用 Poe 官方 chatbot API。"""
+"""Poe API 客户端封装层。
+
+该模块负责：
+1) 将内部消息模型转换为 fastapi_poe 协议消息；
+2) 统一处理流式响应拼接；
+3) 提供单例客户端供任务层复用。
+"""
 from typing import List
 import fastapi_poe as fp
 from os import getenv
 
-from medical_llm_workflow.schemas import ConversationMessage, PoeClientConfig, PoeChatbotConfig
+from medical_llm_workflow.schemas.models import ConversationMessage
 from medical_llm_workflow.meta_config.meta_config import meta_settings, DebugConfig
+from ..base_client import BaseLLMClient
+from ..models import PoeChatbotConfig
 
 
-class PoeClient:
+class PoeClient(BaseLLMClient):
     """Poe API 客户端，负责与 Poe API 交互。"""
 
-    def __init__(self, config: PoeClientConfig):
-        """
-        初始化 Poe API 客户端。
-
-        Args:
-            api_config: Poe API 配置
-        """
-        self.config = config
+    client_name = "poe"
+    base_url: str = "https://api.poe.com"
+    
+    def __init__(self):
+        key_name = f"{PoeClient.client_name.upper()}_KEY"
+        self.api_key = getenv(key_name)
 
     async def call_chatbot(
         self,
@@ -34,7 +40,7 @@ class PoeClient:
         Returns:
             模型返回的完整文本响应
         """
-        # 将 ConversationMessage 转换为 fastapi_poe.ProtocolMessage
+        # 将内部消息对象转换为 Poe SDK 协议消息。
         fp_messages = [
             fp.ProtocolMessage(role=msg.role.value, content=msg.content) for msg in messages
         ]
@@ -50,10 +56,11 @@ class PoeClient:
             chunks.append(" response.")
         else:
             try:
+                # 逐块接收流式 token，并在最后拼接为完整文本。
                 async for part in fp.stream_request(
                     fp.QueryRequest(query=fp_messages),
                     bot_name=chatbot_config.model.value,
-                    api_key=self.config.api_key,
+                    api_key=self.api_key,
                 ):
                     if part.text:
                         chunks.append(part.text)
@@ -63,14 +70,6 @@ class PoeClient:
         return "".join(chunks)
 
 
-_api_key = getenv("POE_API_KEY", "YOUR_API_KEY")
-if _api_key == "YOUR_API_KEY":
-    print("Warning: Please set POE_API_KEY environment variable or update the code.")
+def build_poe_client() -> PoeClient:
+    return PoeClient()
 
-_client_config = PoeClientConfig(api_key=_api_key)
-_poe_client_instance = PoeClient(_client_config)
-
-
-def get_client_instance() -> PoeClient: # TODO: 之后得泛化一些，支持其他类型的 client
-    """创建并返回 PoeClient 实例。"""
-    return _poe_client_instance
