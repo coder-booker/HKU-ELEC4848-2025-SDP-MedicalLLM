@@ -9,8 +9,8 @@ from .models import (
 )
 from .base_evaluator import BaseEvaluator
 from .evaluator_factory import EvaluatorFactory
-from .models import EvaluatorType, EvaluatorConfig
-from .all_evaluators.accuracy import AccuracyEvaluator
+from .models import EvaluatorType
+from .simpleEvaluator.accuracy import AccuracyEvaluator
 
 __all__ = [
     "EvaluationSample",
@@ -21,7 +21,6 @@ __all__ = [
     "BaseEvaluator",
     "EvaluatorFactory",
     "EvaluatorType",
-    "EvaluatorConfig",
     "AccuracyEvaluator",
 ]
 

@@ -14,12 +14,16 @@ from statistics import mean
 from typing import Any, Callable, Dict, List, Optional
 
 from .models import (
-    BatchEvaluationResult,
+    EvluationBatchResult,
     EvaluationArtifacts,
     EvaluationRunOutput,
     EvaluationSample,
-    ScoreRecord,
+    EvluationRecord,
 )
+
+
+DEFAULT_REPORT_PATH = "evaluation_report.md"
+DEFAULT_CHART_PATH = "evaluation_chart.mmd"
 
 CompareFn = Callable[[Any, Any, Dict[str, Any]], float]
 
@@ -29,62 +33,26 @@ class BaseEvaluator(ABC):
 
     evaluator_name: str = "base_evaluator"
     metric_name: str = "base_metric"
+    protocol: Dict[str, str] = {}
 
     def __init__(
         self,
-        params: Optional[Dict[str, Any]] = None,
+        # params: Optional[Dict[str, Any]] = None,
         compare_fn: Optional[CompareFn] = None,
     ) -> None:
-        self.params: Dict[str, Any] = params or {}
+        # self.params: Dict[str, Any] = params or {}
         self.compare_fn: CompareFn = compare_fn or self.default_compare
 
     @abstractmethod
     def default_compare(self, prediction: Any, target: Any, params: Dict[str, Any]) -> float:
         """默认评分函数（当未注入 compare_fn 时使用）。"""
 
-    def score_one(self, sample: EvaluationSample) -> ScoreRecord:
-        """评分单条样本。"""
-        score = float(self.compare_fn(sample.prediction, sample.target, self.params))
-        # 统一钳制到 [0, 1]，避免注入函数异常返回污染统计。
-        score = max(0.0, min(1.0, score))
-        return ScoreRecord(
-            sample_id=sample.sample_id,
-            score=score,
-            prediction=sample.prediction,
-            target=sample.target,
-        )
+    def normalize_prediction(self, raw_prediction: Any) -> Any:
+        """把工作流原始输出归一化为评测输入。"""
+        # 默认不做转换，交给具体 evaluator 按指标语义覆盖。
+        return raw_prediction
 
-    def score_batch(self, samples: List[EvaluationSample]) -> BatchEvaluationResult:
-        """批量评分。"""
-        if not samples:
-            return BatchEvaluationResult(
-                evaluator_name=self.evaluator_name,
-                metric_name=self.metric_name,
-                params=self.params,
-                total_samples=0,
-                average_score=0.0,
-                min_score=0.0,
-                max_score=0.0,
-                records=[],
-                summary={"note": "No samples provided."},
-            )
-
-        records = [self.score_one(sample) for sample in samples]
-        scores = [record.score for record in records]
-
-        return BatchEvaluationResult(
-            evaluator_name=self.evaluator_name,
-            metric_name=self.metric_name,
-            params=self.params,
-            total_samples=len(records),
-            average_score=float(mean(scores)),
-            min_score=float(min(scores)),
-            max_score=float(max(scores)),
-            records=records,
-            summary=self._build_summary(records),
-        )
-
-    def _build_summary(self, records: List[ScoreRecord]) -> Dict[str, Any]:
+    def _build_summary(self, records: List[EvluationRecord]) -> Dict[str, Any]:
         """构建默认摘要。"""
         hit_count = sum(1 for r in records if r.score >= 1.0)
         return {
@@ -92,7 +60,7 @@ class BaseEvaluator(ABC):
             "hit_rate": (hit_count / len(records)) if records else 0.0,
         }
 
-    def build_chart_mermaid(self, result: BatchEvaluationResult) -> str:
+    def build_chart_mermaid(self, result: EvluationBatchResult) -> str:
         """生成 Mermaid 条形图（文本）。"""
         avg = round(result.average_score, 4)
         min_v = round(result.min_score, 4)
@@ -106,7 +74,7 @@ class BaseEvaluator(ABC):
             f"    bar [{avg}, {min_v}, {max_v}]\n"
         )
 
-    def build_report_markdown(self, result: BatchEvaluationResult) -> str:
+    def build_report_markdown(self, result: EvluationBatchResult) -> str:
         """生成 Markdown 报告内容。"""
         lines: List[str] = []
         lines.append(f"# Evaluation Report - {result.evaluator_name}")
@@ -143,27 +111,77 @@ class BaseEvaluator(ABC):
 
         lines.append("")
         return "\n".join(lines)
+    
+    
+    def evaluate_one(self, sample: EvaluationSample) -> EvluationRecord:
+        """评分单条样本。"""
+        score = float(self.compare_fn(sample["prediction"], sample["target"], self.params))
+        # 统一钳制到 [0, 1]，避免注入函数异常返回污染统计。
+        score = max(0.0, min(1.0, score))
+        
+        return {
+            # "sample_id": sample[],
+            "score": score,
+            "prediction": sample.prediction,
+            "target": sample.target,
+        }
+
+    def evaluate_batch(self, sample_list: List[EvaluationSample]) -> EvluationBatchResult:
+        """批量评分。"""
+        # if not sample_list:
+        #     return EvluationBatchResult(
+        #         evaluator_name=self.evaluator_name,
+        #         metric_name=self.metric_name,
+        #         params=self.params,
+        #         total_samples=0,
+        #         average_score=0.0,
+        #         min_score=0.0,
+        #         max_score=0.0,
+        #         records=[],
+        #         summary={"note": "No sample_list provided."},
+        #     )
+
+        records = [self.evaluate_one(sample) for sample in sample_list]
+        scores = [record["score"] for record in records]
+
+        return {
+            "evaluator_name": self.evaluator_name,
+            "metric_name": self.metric_name,
+            # "params": self.params,
+            "total_samples": len(records),
+            "average_score": float(mean(scores)),
+            "min_score": float(min(scores)),
+            "max_score": float(max(scores)),
+            "records": records,
+            "summary": self._build_summary(records),
+        }
 
     def run(
         self,
-        samples: List[EvaluationSample],
-        report_path: Optional[str] = None,
-        chart_path: Optional[str] = None,
+        sample_list: List[EvaluationSample],
+        report_path: str = DEFAULT_REPORT_PATH,
+        chart_path: str = DEFAULT_CHART_PATH,
     ) -> EvaluationRunOutput:
         """执行批量评估并按需写出产物。"""
-        result = self.score_batch(samples)
-        artifacts = EvaluationArtifacts()
+        # 运行评分逻辑，得到结果对象。
+        result = self.evaluate_batch(sample_list)
 
-        if report_path:
-            report_text = self.build_report_markdown(result)
-            with open(report_path, "w", encoding="utf-8") as f:
-                f.write(report_text)
-            artifacts.report_path = report_path
+        report_text = self.build_report_markdown(result)
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(report_text)
+            
+        chart_text = self.build_chart_mermaid(result)
+        with open(chart_path, "w", encoding="utf-8") as f:
+            f.write(chart_text)
+        
+        artifacts: EvaluationArtifacts = {
+            "report_path": report_path,
+            "chart_path": chart_path,
+        }
+        
+        run_output: EvaluationRunOutput = {
+            "result": result,
+            "artifacts": artifacts,
+        }
 
-        if chart_path:
-            chart_text = self.build_chart_mermaid(result)
-            with open(chart_path, "w", encoding="utf-8") as f:
-                f.write(chart_text)
-            artifacts.chart_path = chart_path
-
-        return EvaluationRunOutput(result=result, artifacts=artifacts)
+        return run_output

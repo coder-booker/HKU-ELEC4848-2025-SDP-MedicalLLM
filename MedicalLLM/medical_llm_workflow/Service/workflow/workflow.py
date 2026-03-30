@@ -6,117 +6,301 @@
 3) 依次创建并执行任务；
 4) 汇总并打印 benchmark 结果。
 """
-from typing import Dict, List
-import re
+from typing import Any, Dict, List
+import uuid
 
-from medical_llm_workflow.Service.workflow.models import WorkflowConfig
+from pydantic import BaseModel, Field
+
 from medical_llm_workflow.schemas.models import (
     ConversationMessageStatus,
-    ConversationMessage,
-    ConversationMessageRole,
 )
 from medical_llm_workflow.Domain.tasks.models import (
-    TaskContext,
-    TaskRecord,
-    TaskConfig,
     PlainTextTaskConfig,
-    EvaluationTaskConfig,
+    SmartExtractorTaskConfig,
+    TaskConfig,
 )
 from medical_llm_workflow.Domain.prompts.models import PromptTemplate
 from medical_llm_workflow.Domain.tasks import TaskFactory
 from medical_llm_workflow.Domain.workflow_context import WorkflowContext
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetFactory
+from medical_llm_workflow.Domain.benchmark.Evaluator import (
+    EvaluationSample,
+    EvaluatorFactory,
+)
+from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
+from medical_llm_workflow.Domain.benchmark.Dataset.models import DatasetConfig, DatasetType
+from medical_llm_workflow.Domain.benchmark.SmartExtractor.extractor_factory import SmartExtractorFactory
+from medical_llm_workflow.Domain.benchmark.DatasetEvaluatorConnector.simple_connector import DatasetSimpleEvaluatorConnector
+
+
+class DatasetInletItem(BaseModel):
+    """
+    - dataset_type: DatasetType - 数据集类型，供后续 evaluator 识别题目格式
+    - text_question: str - 传给工作流的文本题目
+    - json_question: Dict[str, Any] - 传给 evaluator 的结构化题目
+    """
+
+    dataset_type: DatasetType
+    text_question: str
+    json_question: Dict[str, Any]
 
 
 class Workflow:
-    """医疗推理工作流执行器。"""
+    """工作流执行器。"""
 
     def __init__(
         self,
-        config: WorkflowConfig,
+        id: uuid.UUID = Field(default_factory=uuid.uuid4),
+        name: str = "Default Workflow Name",
+        task_config_list: List[TaskConfig] = Field(default_factory=list),
+        dataset_config_list: List[DatasetConfig] = Field(default_factory=list),
+        evaluator_list: List[EvaluatorType] = Field(default_factory=list),
+        # language: LanguageType = LanguageType.EN # 整条工作流的语言
     ):
         """保存工作流配置并初始化上下文容器。"""
-        self.config = config
+        self.id = id
+        self.name = name
+
+        # 避免外部列表引用导致运行中被意外修改。
+        self.task_config_list = list(task_config_list)
+        self.dataset_config_list = list(dataset_config_list)
+        self.evaluator_list = list(evaluator_list)
+
         self.workflow_context = WorkflowContext(
-            workflow_id=self.config.id,
+            workflow_id=self.id,
         )
-    
-    async def fire(self) -> WorkflowContext:
-        '''执行工作流并返回最终上下文。'''
-        # Benchmark
-        # 解析 dataset 和 evaluator 配置
-        benchmark_config = self.config.benchamrk_config
-        dataset_config_list = benchmark_config.dataset_list
 
-        benchmark_question_list: List[str] = []
-        
-        # 解析 dataset。
-        # TODO 目前其实只会有一个 dataset
-        for dataset_config in dataset_config_list:
+        # self.dataset_inlet: = None
+        self.core_tasks: List[TaskConfig] = []
+        self.output_tasks = None
+
+    def init_dataset_inlet(self) -> List[DatasetInletItem]:
+        """
+        初始化 dataset 入口。
+
+        Returns:
+            每个元素包含：
+            - question_text: 传给工作流的文本题目
+            - question_payload: 传给 evaluator 的结构化题目
+        """
+        if not self.dataset_config_list:
+            raise ValueError("dataset_config_list is empty, cannot initialize dataset inlet.")
+
+        dataset_inlet_item_list: List[DatasetInletItem] = []
+
+        # 目前支持多个 dataset，结果直接按顺序展开。
+        for dataset_config in self.dataset_config_list:
             dataset = DatasetFactory.create(dataset_config)
-            benchmark_question_list.append(dataset.get_text_questions())
-        # 用文本节点接入 benchmark 问题到工作流，之后的任务可以根据需要消费这个问题文本。
-        # TODO: 可能可以用 dataset task 来替换这段逻辑，但 dataset 的大文件让整个逻辑有些复杂，可能无法保证性能的情况下分到一个个 task 里去执行
-        # TODO: 第一题作为 demo 输入。
-        question_text = benchmark_question_list[0][0]
-        task_config = PlainTextTaskConfig(
-            prompt_template=PromptTemplate(text=question_text),
-        )
-        self.config.task_config_list.insert(0, task_config)
-        
-        
-        # TO CONTINUE: 解析 evaluator
-        evaluator_group_list = benchmark_config.evaluator_group_list
-        # TODO 目前其实只会有一个 evaluator group，之后再支持多组 evaluator 的情况
-        # 1. 得到每个 evaluator 的要求结构，组合成 prompt
-        evaluator_group = evaluator_group_list[0]
-        evaluation_task_config = EvaluationTaskConfig(
-            evaluator_list=evaluator_group,
-        )
-        self.config.task_config_list.append(evaluation_task_config)
-        
-        # BaseTask
-        # 根据每个任务配置创建并执行任务，任务内部会把结果写回 workflow_context。任何任务失败都会抛出异常中止流程。
-        for task_config in self.config.task_config_list:
-            await self._create_and_execute_task(
-                task_config=task_config,
-                workflow_context=self.workflow_context,
-            )
-        
-        # TODO：这里暂时把打印 benchamrk 结果放在 workflow 里，之后可以考虑更好的设计
-        print("Benchmark Results ===")
-        for task_record in self.workflow_context.get_all_records():
-            # 逐条扫描任务输出，寻找最终答案并做简单正确性判断。
-            task_output: List[ConversationMessage] = task_record.task_context.output
-            for message in task_output:
-                if message.status == ConversationMessageStatus.COMPLETED:
-                    print(f"{message.content}")
-                    # TODO: 暂时 hard code 为 MedQA 的结果打印，之后需要更通用的设计
-                    # 正则表达式提取 Final Answer
-                    answer_match = re.search(r"Final Answer:\s*\{([A-Z])\}", message.content)
-                    if answer_match:
-                        final_answer = answer_match.group(1)
-                        print(f"Extracted Final Answer: {final_answer}")
-                        if final_answer == 'E': # 第一题正确答案是 E
-                            print("The final answer is correct!")
-                        else:
-                            print("The final answer is incorrect.")
-                    else:
-                        print("No Final Answer found in the response.")
-        
-        return self.workflow_context
+            text_selected_formatted_questions = dataset.get_text_selected_formatted_questions()
+            selected_formatted_questions = dataset.get_selected_formatted_questions()
 
-    async def _create_and_execute_task(
+            for i in range(dataset.num_of_questions):
+                text_formatted_question = text_selected_formatted_questions[i]
+                formatted_question = selected_formatted_questions[i]
+
+                dataset_inlet_item_list.append(
+                    DatasetInletItem(
+                        dataset_type=dataset_config.dataset_type,
+                        text_question=text_formatted_question,
+                        json_question=formatted_question.model_dump(),
+                    ),
+                )
+
+        return dataset_inlet_item_list
+
+    def init_extractor(self) -> SmartExtractorTaskConfig:
+        """初始化 SmartExtractor 任务配置。"""
+        extractor_chatbot_config = None
+
+        # extractor 本身也要调用 LLM，因此复用主任务链中的任一可用 chatbot_config。
+        for task_config in self.task_config_list:
+            if getattr(task_config, "chatbot_config", None) is not None:
+                extractor_chatbot_config = task_config.chatbot_config
+                break
+
+        extractor_task_config = SmartExtractorTaskConfig(
+            chatbot_config=extractor_chatbot_config,
+            evaluator_list=self.evaluator_list.copy(),
+        )
+
+        return extractor_task_config
+
+    def init_evaluator(
         self,
-        task_config: TaskConfig,
-        workflow_context: WorkflowContext,
-    ) -> TaskContext:
-        """根据配置创建任务并执行，失败时抛出异常中断工作流。"""
-        task = TaskFactory.create(task_config)
-        
-        task_record = await task.execute(workflow_context)
-        
-        for task_output in task_record.task_context.output:
-            # 一旦任何任务输出标记为 FAILED，直接中止整个流程。
-            if task_output.status == ConversationMessageStatus.FAILED:
-                raise Exception(f"Task {task.config.id} failed with error: {task_output.content}") # TODO：之后再详细处理
+        all_workflow_contexts: List[WorkflowContext],
+        dataset_inlet_item_list: List[DatasetInletItem],
+    ) -> Dict[str, Any]:
+        """执行全部 evaluator，并在最后融合输出一份统一报告。"""
+        print("Evaluation Results ===")
+        evaluation_schema = SmartExtractorFactory.build_expected_schema(self.evaluator_list)
+
+        evaluation_sample_list: List[EvaluationSample] = []
+        # 从 extractor 的结构化输出读取 prediction，再组评测样本。
+        for index, workflow_context in enumerate(all_workflow_contexts):
+            # Normalize 给 evaluator 用的金标答案。
+            dataset_inlet_item = dataset_inlet_item_list[index]
+            answer = DatasetSimpleEvaluatorConnector.dataset_to_evaluator_protocol(
+                dataset_type=dataset_inlet_item.dataset_type,
+                dataset_json_question=dataset_inlet_item.json_question,
+            )
+
+            # 最后一个 task record 应该是 SmartExtractorTask，读取其结构化输出作为 prediction。
+            final_task_record = workflow_context.get_last_task_record()
+            final_output_message_content = final_task_record.task_context["output"][-1].content
+
+            prediction = SmartExtractorFactory.parse_result(
+                raw_response=final_output_message_content,
+                expected_schema=evaluation_schema,
+            )
+
+            evaluation_sample_list.append(
+                {
+                    "answer": answer,
+                    "prediction": prediction,
+                },
+            )
+
+        # 先执行全部 evaluator，只保留内存中的评测结果，最后统一融合写报告。
+        evaluation_result_list: List[Dict[str, Any]] = []
+        for evaluator_type in self.evaluator_list:
+            print(f"Evaluator {evaluator_type.value} ===")
+            evaluator = EvaluatorFactory.create(
+                evaluator_type=evaluator_type,
+            )
+            evaluation_result = evaluator.evaluate_batch(
+                sample_list=evaluation_sample_list,
+            )
+            chart_text = evaluator.build_chart_mermaid(
+                evaluation_result,
+            ).rstrip()
+
+            evaluation_result_list.append(
+                {
+                    "evaluator_name": evaluator_type.value,
+                    "result": evaluation_result,
+                    "chart_text": chart_text,
+                },
+            )
+
+            print(f"- Evaluator: {evaluator_type.value}")
+            print(f"  Average Score: {evaluation_result['average_score']:.4f}")
+            print(f"  Summary: {evaluation_result['summary']}")
+
+        # 所有 evaluator 都结束后，再融合成一份总报告。
+        merged_report_lines: List[str] = []
+        merged_report_lines.append("# Evaluation Report")
+        merged_report_lines.append("")
+        merged_report_lines.append(f"- Total Evaluators: {len(evaluation_result_list)}")
+        merged_report_lines.append(f"- Total Samples: {len(evaluation_sample_list)}")
+        merged_report_lines.append("")
+
+        for evaluation_item in evaluation_result_list:
+            evaluator_name = evaluation_item["evaluator_name"]
+            evaluation_result = evaluation_item["result"]
+            chart_text = evaluation_item["chart_text"]
+
+            merged_report_lines.append(f"## Evaluator: {evaluator_name}")
+            merged_report_lines.append("")
+            merged_report_lines.append(f"- Metric: {evaluation_result['metric_name']}")
+            merged_report_lines.append(f"- Total Samples: {evaluation_result['total_samples']}")
+            merged_report_lines.append(f"- Average Score: {evaluation_result['average_score']:.4f}")
+            merged_report_lines.append(f"- Min Score: {evaluation_result['min_score']:.4f}")
+            merged_report_lines.append(f"- Max Score: {evaluation_result['max_score']:.4f}")
+            merged_report_lines.append("")
+
+            merged_report_lines.append("### Summary")
+            merged_report_lines.append("")
+            for summary_key, summary_value in evaluation_result["summary"].items():
+                merged_report_lines.append(f"- {summary_key}: {summary_value}")
+            merged_report_lines.append("")
+
+            merged_report_lines.append("### Score Distribution")
+            merged_report_lines.append("")
+            merged_report_lines.append("```mermaid")
+            merged_report_lines.append(chart_text)
+            merged_report_lines.append("```")
+            merged_report_lines.append("")
+
+        merged_report_path = "evaluation_report.md"
+        with open(merged_report_path, "w", encoding="utf-8") as report_file:
+            report_file.write("\n".join(merged_report_lines))
+
+        return {
+            "report_path": merged_report_path,
+            "results": evaluation_result_list,
+        }
+
+    async def fire_tasks_execution(
+        self,
+        inlet_tasks: List[TaskConfig] = [],
+        outlet_tasks: List[TaskConfig] = [],
+    ) -> WorkflowContext:
+        """
+        执行单道题工作流并返回对应上下文。
+
+        Args:
+            inlet_tasks: 题目注入任务配置列表，会被顺序接在工作流头
+            outlet_tasks: 题目输出任务配置列表，会被顺序接在工作流尾中
+
+        Returns:
+            工作流上下文，包含本次 fire_tasks_execution 的全部对话记录和结果。
+        """
+        workflow_context = WorkflowContext(
+            workflow_id=self.id,
+        )
+
+        # core task 只保留用户配置，不在成员变量上原地 insert，避免多轮 fire_tasks_execution 污染配置。
+        core_task_config_list = list(self.task_config_list)
+
+        # 执行链：题目注入 -> 核心推理任务 -> 智能数据提取器。
+        execution_task_config_list: List[TaskConfig] = []
+        execution_task_config_list.extend(inlet_tasks)
+        execution_task_config_list.extend(core_task_config_list)
+        execution_task_config_list.extend(outlet_tasks)
+
+        # 根据每个任务配置创建并执行任务，任务内部会把结果写回 workflow_context。
+        for task_config in execution_task_config_list:
+            task = TaskFactory.create(task_config)
+            task_record = await task.execute(workflow_context)
+
+            for task_output in task_record.task_context["output"]:
+                # 一旦任何任务输出标记为 FAILED，直接中止整个流程。
+                if task_output.status == ConversationMessageStatus.FAILED:
+                    raise Exception(
+                        f"Task {task.config.id} failed with error: {task_output.content}",
+                    )
+
+        return workflow_context
+
+    async def run(self) -> List[WorkflowContext]:
+        """初始化 dataset 与 evaluator，执行全量工作流并返回全部上下文。"""
+        all_workflow_contexts: List[WorkflowContext] = []
+
+        # question_item_list 和 all_workflow_contexts 使用相同索引对齐。
+        dataset_inlet_item_list = self.init_dataset_inlet()
+
+        inlet_tasks: List[TaskConfig] = []
+        for dataset_inlet_item in dataset_inlet_item_list:
+            inlet_task = PlainTextTaskConfig(
+                prompt_template=PromptTemplate(
+                    text=dataset_inlet_item.text_question,
+                ),
+            )
+            inlet_tasks.append(inlet_task)
+
+        smart_extractor_task_config = self.init_extractor()
+
+        # 逐题执行 fire，收集每题上下文。
+        for i in range(len(dataset_inlet_item_list)):
+            workflow_context = await self.fire_tasks_execution(
+                inlet_tasks=[inlet_tasks[i]],
+                outlet_tasks=[smart_extractor_task_config],
+            )
+            all_workflow_contexts.append(workflow_context)
+
+        result = self.init_evaluator(
+            all_workflow_contexts=all_workflow_contexts,
+            dataset_inlet_item_list=dataset_inlet_item_list,
+        )
+
+        return all_workflow_contexts

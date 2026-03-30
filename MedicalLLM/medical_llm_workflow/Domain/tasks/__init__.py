@@ -5,6 +5,7 @@ from .all_tasks.problem_representation_task import ProblemRepresentationTask
 from .all_tasks.hypothesis_generation_task import HypothesisGenerationTask
 from .all_tasks.hypothesis_evaluation_task import HypothesisEvaluationTask
 from .all_tasks.evaluation_task import EvaluationTask
+from .all_tasks.smart_extractor_task import SmartExtractorTask
 from .task_factory import TaskFactory
 from .models import (
     TaskType,
@@ -13,6 +14,7 @@ from .models import (
     TaskConfig,
     PlainTextTaskConfig,
     EvaluationTaskConfig,
+    SmartExtractorTaskConfig,
     TaskRecord,
 )
 
@@ -25,12 +27,14 @@ __all__ = [
     "HypothesisGenerationTask",
     "HypothesisEvaluationTask",
     "EvaluationTask",
+    "SmartExtractorTask",
     "TaskFactory",
     "TaskType",
     "MedicalType",
     "TaskContext",
     "TaskConfig",
     "PlainTextTaskConfig",
+    "SmartExtractorTaskConfig",
     "TaskRecord",
 ]
 

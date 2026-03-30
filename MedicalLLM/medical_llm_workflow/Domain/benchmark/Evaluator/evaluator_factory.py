@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 from .base_evaluator import BaseEvaluator
-from .all_evaluators.accuracy import AccuracyEvaluator
+from .simpleEvaluator.accuracy import AccuracyEvaluator
 from .models import EvaluatorType
 
 
@@ -24,7 +24,7 @@ class EvaluatorFactory:
     def create(
         cls,
         evaluator_type: EvaluatorType,
-        params: Optional[Dict[str, Any]] = None,
+        # params: Optional[Dict[str, Any]] = None,
         compare_fn: Optional[Callable[[Any, Any, Dict[str, Any]], float]] = None,
     ) -> BaseEvaluator:
         """创建评估器实例。
@@ -34,5 +34,12 @@ class EvaluatorFactory:
         evaluator_cls = cls._registry.get(evaluator_type)
         if evaluator_cls is None:
             raise ValueError(f"Unsupported evaluator type: {evaluator_type}")
-        return evaluator_cls(params=params, compare_fn=compare_fn)
+        return evaluator_cls(compare_fn=compare_fn)
 
+    @classmethod
+    def get_evaluator_llm_protocol(cls, evaluator_type: EvaluatorType) -> Dict[str, str]:
+        """获取指定评估器的结构化输出提示词。"""
+        evaluator_cls = cls._registry.get(evaluator_type)
+        if evaluator_cls is None:
+            raise ValueError(f"Unsupported evaluator type: {evaluator_type}")
+        return evaluator_cls.protocol

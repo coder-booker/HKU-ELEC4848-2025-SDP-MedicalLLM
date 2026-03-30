@@ -12,6 +12,7 @@ from medical_llm_workflow.Domain.tasks.all_tasks.problem_representation_task imp
 from medical_llm_workflow.Domain.tasks.all_tasks.hypothesis_generation_task import HypothesisGenerationTask
 from medical_llm_workflow.Domain.tasks.all_tasks.hypothesis_evaluation_task import HypothesisEvaluationTask
 from medical_llm_workflow.Domain.tasks.all_tasks.evaluation_task import EvaluationTask
+from medical_llm_workflow.Domain.tasks.all_tasks.smart_extractor_task import SmartExtractorTask
 from medical_llm_workflow.Domain.tasks.models import (
     PlainTextTaskConfig,
     TaskConfig,
@@ -38,6 +39,7 @@ class TaskFactory:
         TaskType.SINGLE_AGENT: BaseTask,
         TaskType.PLAIN_TEXT: PlainTextTask,
         TaskType.EVALUATION: EvaluationTask,
+        TaskType.SMART_EXTRACTOR: SmartExtractorTask,
     }
 
     @classmethod

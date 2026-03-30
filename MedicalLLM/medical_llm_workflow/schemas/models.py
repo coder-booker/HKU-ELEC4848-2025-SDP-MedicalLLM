@@ -6,7 +6,6 @@
 from dataclasses import dataclass, field
 import uuid
 from enum import Enum
-from typing import Dict, List, Optional, Protocol
 from pydantic import BaseModel, Field
 
 
@@ -39,7 +38,7 @@ class ConversationMessage(BaseModel): # TODO：之后可以配置化，让重复
     """对话消息。"""
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     role: ConversationMessageRole
-    content: str | Dict | List  # 兼容文本和结构化内容，例如 evaluation output 可能是一个 dict
+    content: str
     status: ConversationMessageStatus = ConversationMessageStatus.NORMAL
     
     def __str__(self):

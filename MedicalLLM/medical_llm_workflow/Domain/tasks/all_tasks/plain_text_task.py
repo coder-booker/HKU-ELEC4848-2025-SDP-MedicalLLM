@@ -56,7 +56,6 @@ class PlainTextTask(BaseTask):
             workflow_context_port.append_task_record(task_record)
             return task_record
         
-        
         msg = ConversationMessage(
             role=ConversationMessageRole.USER,
             content=prompt_text,

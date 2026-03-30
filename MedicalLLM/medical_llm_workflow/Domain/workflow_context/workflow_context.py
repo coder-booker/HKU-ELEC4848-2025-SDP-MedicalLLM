@@ -34,6 +34,10 @@ class WorkflowContext:
     def last_task_record(self) -> TaskRecord:
         """获取最后一条记录（返回拷贝）。"""
         return self.conversation_history.get_tail()
+
+    def get_last_task_record(self) -> TaskRecord:
+        """获取最后一条记录（兼容 BaseTask 调用接口）。"""
+        return self.last_task_record()
     
     # def get_all_prev_task_records(self, task_id: str) -> List[TaskRecord]:
     #     """

@@ -9,7 +9,7 @@ class ChatbotType(Enum):
     POE = "poe"
     GLM = "glm"
 
-class ChatbotConfig(BaseModel):
+class BaseChatbotConfig(BaseModel):
     """单次模型调用参数配置。"""
     chatbot_type: ChatbotType
     model: PoeChatbotModel | GLMChatbotModel
@@ -24,7 +24,7 @@ class PoeChatbotModel(Enum):
     GPT_5_1 = "GPT-5.1"
     # 可根据需要添加更多模型
 
-class PoeChatbotConfig(ChatbotConfig):
+class PoeChatbotConfig(BaseChatbotConfig):
     """单次模型调用参数配置。"""
     model: PoeChatbotModel
     
@@ -37,6 +37,6 @@ class GLMChatbotModel(Enum):
     GLM_3_5 = "GLM-3.5"
     # 可根据需要添加更多模型
 
-class GLMChatbotConfig(ChatbotConfig):
+class GLMChatbotConfig(BaseChatbotConfig):
     """单次模型调用参数配置。"""
     model: GLMChatbotModel

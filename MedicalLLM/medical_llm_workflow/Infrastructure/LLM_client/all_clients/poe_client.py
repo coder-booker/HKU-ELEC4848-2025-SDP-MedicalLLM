@@ -10,7 +10,7 @@ import fastapi_poe as fp
 from os import getenv
 
 from medical_llm_workflow.schemas.models import ConversationMessage
-from medical_llm_workflow.meta_config.meta_config import meta_settings, DebugConfig
+from medical_llm_workflow.meta_config.meta_config import meta_settings
 from ..base_client import BaseLLMClient
 from ..models import PoeChatbotConfig
 
@@ -47,25 +47,26 @@ class PoeClient(BaseLLMClient):
 
         # 调用 Poe API
         chunks = []
-        if meta_settings.debug == DebugConfig.FAKE_POE:
+        if meta_settings.debug:
             # fake response for debug
             chunks.append("This")
             chunks.append(" is")
             chunks.append(" a")
             chunks.append(" fake")
             chunks.append(" response.")
-        else:
-            try:
-                # 逐块接收流式 token，并在最后拼接为完整文本。
-                async for part in fp.stream_request(
-                    fp.QueryRequest(query=fp_messages),
-                    bot_name=chatbot_config.model.value,
-                    api_key=self.api_key,
-                ):
-                    if part.text:
-                        chunks.append(part.text)
-            except Exception as e:
-                raise RuntimeError(f"Failed to call Poe API: {e}") from e
+            return "".join(chunks)
+        
+        try:
+            # 逐块接收流式 token，并在最后拼接为完整文本。
+            async for part in fp.stream_request(
+                fp.QueryRequest(query=fp_messages),
+                bot_name=chatbot_config.model.value,
+                api_key=self.api_key,
+            ):
+                if part.text:
+                    chunks.append(part.text)
+        except Exception as e:
+            raise RuntimeError(f"Failed to call Poe API: {e}") from e
         
         return "".join(chunks)
 

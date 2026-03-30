@@ -4,16 +4,16 @@
 """
 from enum import Enum
 
-class DebugConfig(Enum):
-    """调试模式枚举。"""
-    FAKE_POE: str = "fake_poe"
-    REAL_POE: str = "real_poe"
-    
+# class DebugConfig(Enum):
+#     """调试模式枚举。"""
+#     FAKE_POE: str = "fake_poe"
+#     REAL_POE: str = "real_poe"
+
 
 class MetaSettings():
     """运行时元配置对象。"""
     # 默认走假响应，便于离线开发调试。
-    debug: DebugConfig = DebugConfig.FAKE_POE
+    debug: bool = True
 
 # 最常见：模块级单例，其他地方直接 import settings
 meta_settings = MetaSettings()

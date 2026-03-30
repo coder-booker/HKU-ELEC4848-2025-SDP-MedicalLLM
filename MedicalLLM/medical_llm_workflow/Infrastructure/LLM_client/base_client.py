@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from medical_llm_workflow.schemas.models import ConversationMessage
-from .models import ChatbotConfig
+from .models import BaseChatbotConfig
 
 
 class BaseLLMClient(ABC):
@@ -18,7 +18,7 @@ class BaseLLMClient(ABC):
     async def call_chatbot(
         self,
         messages: List[ConversationMessage],
-        chatbot_config: ChatbotConfig,
+        chatbot_config: BaseChatbotConfig,
     ) -> str:
         """调用模型并返回纯文本响应。"""
 

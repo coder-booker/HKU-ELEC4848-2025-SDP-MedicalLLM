@@ -22,7 +22,6 @@ class HypothesisEvaluationTask(BaseTask):
 You can find the Problem Representation result and Hypothesis Generation result in previous messages
 '''
     
-    
     def get_messages_for_llm_call(
         self,
         workflow_context_port: WorkflowContextPort, # TODO：之后可能可以不通过 workflow_context 传入，而是 TaskConfig 包含或者使用类似单例的方法
@@ -30,21 +29,10 @@ You can find the Problem Representation result and Hypothesis Generation result 
         """拼接历史消息并附加本阶段提示词。"""
         messages: List[ConversationMessage] = []
 
-        # 获取上下文：问题表述，也就是上一次任务的输出，作为本次任务的输入。
-        # TODO: 这里必须 hardcode 先
-        all_records = workflow_context_port.get_all_records()
         # 获得问题表述和假设生成的消息，作为评估阶段的输入。
-        question_representation_messages = all_records[-2].task_context.output
-        messages.extend(question_representation_messages)
-        hypothesis_generation_messages = all_records[-1].task_context.output
-        messages.extend(hypothesis_generation_messages)
-        
-        # 获取提示词
-        task_prompt = self.prompt
-        new_message = ConversationMessage(
-            role=ConversationMessageRole.ASSISTANT,
-            content=task_prompt,
-        )
-        messages.append(new_message)
+        messages = super().get_messages_for_llm_call(workflow_context_port) # 这里会返回 上一次输出（假设生成） + prompt
+        all_records = workflow_context_port.get_all_records()
+        question_representation_messages = all_records[-2].task_context.output # TODO: 这里必须 hardcode 先
+        messages.insert(0, question_representation_messages)
 
         return messages

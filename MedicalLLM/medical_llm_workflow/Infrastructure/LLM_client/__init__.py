@@ -4,6 +4,7 @@ from .base_client import BaseLLMClient
 from .all_clients.poe_client import PoeClient
 from .all_clients.glm_client import GLMClient
 from .client_factory import ChatbotType, ClientFactory
+from .models import PoeChatbotConfig, GLMChatbotConfig, BaseChatbotConfig
 
 
 __all__ = [
@@ -12,4 +13,7 @@ __all__ = [
     "GLMClient",
     "ChatbotType",
     "ClientFactory",
+    "PoeChatbotConfig",
+    "GLMChatbotConfig",
+    "BaseChatbotConfig",
 ]

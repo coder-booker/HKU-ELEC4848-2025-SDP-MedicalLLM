@@ -41,7 +41,6 @@ class BaseTask:
             context_manager: 上下文管理器
         """
         self.config = config
-        self.llm_client: BaseLLMClient = ClientFactory.get_client_instance(self.config.chatbot_config.chatbot_type)
         self.prompt = self.build_prompt(
             args_map=self.config.prompt_args_map,
         )
@@ -67,10 +66,18 @@ class BaseTask:
         """
         messages: List[ConversationMessage] = []
         
-        # 获取上下文
+        # 获取上下文：默认把上一个任务的输出作为本次任务的输入。
         prev_task_record = workflow_context_port.get_last_task_record() # TODO：先假设所有消息都是单线性且不重复的
         prev_task_output = prev_task_record.task_context.output if prev_task_record else []
         messages.extend(prev_task_output)
+        
+        # 获取提示词
+        task_prompt = self.prompt
+        new_message = ConversationMessage(
+            role=ConversationMessageRole.USER,
+            content=task_prompt,
+        )
+        messages.append(new_message)
 
         return messages
     
@@ -96,9 +103,9 @@ class BaseTask:
             
         # 进行问答
         try:
-            # TODO：更好地适配起始的 question
             # 委托基础设施层与 Poe API 通信。
-            response = await self.llm_client.call_chatbot(
+            llm_client = ClientFactory.get_client_instance(self.config.chatbot_config.chatbot_type)
+            response = await llm_client.call_chatbot(
                 messages,
                 self.config.chatbot_config,
             )

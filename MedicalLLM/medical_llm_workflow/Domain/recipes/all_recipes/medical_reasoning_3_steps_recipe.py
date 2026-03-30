@@ -29,15 +29,14 @@ class MedicalReasoning3StepsRecipe(Recipe):
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.PROBLEM_REPRESENTATION,
                 chatbot_config=chatbot_config,
-                connect_to=["Hypothesis Generation 1"],
-                prompt_args_map={"question": "{{QUESTION}}"},
+                # connect_to=["Hypothesis Generation 1"],
+                # prompt_args_map={"question": "{{QUESTION}}"},
             ),
             TaskConfig(
                 id="Hypothesis Generation 1",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.HYPOTHESIS_GENERATION,
                 chatbot_config=chatbot_config,
-                connect_to=["Hypothesis Evaluation 1"],
             ),
             TaskConfig(
                 id="Hypothesis Evaluation 1",
