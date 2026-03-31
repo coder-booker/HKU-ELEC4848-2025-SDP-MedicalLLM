@@ -7,7 +7,6 @@
 """
 from typing import List
 
-from medical_llm_workflow.schemas.models import PoeChatbotConfig
 from medical_llm_workflow.Domain.tasks.models import TaskConfig, TaskType, MedicalType
 from medical_llm_workflow.Domain.recipes.recipe import Recipe
 from medical_llm_workflow.Domain.recipes.models import RecipeMeta, RecipeType
@@ -22,27 +21,28 @@ class MedicalReasoning3StepsRecipe(Recipe):
         description="问题表征 -> 假设生成 -> 假设评估",
     )
 
-    def build_task_configs(self, chatbot_config: PoeChatbotConfig) -> List[TaskConfig]:
+    def build_task_configs(self) -> List[TaskConfig]:
+        
         return [
             TaskConfig(
-                id="Problem Representation 1",
+                # id="Problem Representation 1",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.PROBLEM_REPRESENTATION,
-                chatbot_config=chatbot_config,
+                chatbot_config=self.chatbot_config,
                 # connect_to=["Hypothesis Generation 1"],
                 # prompt_args_map={"question": "{{QUESTION}}"},
             ),
             TaskConfig(
-                id="Hypothesis Generation 1",
+                # id="Hypothesis Generation 1",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.HYPOTHESIS_GENERATION,
-                chatbot_config=chatbot_config,
+                chatbot_config=self.chatbot_config,
             ),
             TaskConfig(
-                id="Hypothesis Evaluation 1",
+                # id="Hypothesis Evaluation 1",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.HYPOTHESIS_EVALUATION,
-                chatbot_config=chatbot_config,
+                chatbot_config=self.chatbot_config,
             ),
         ]
 

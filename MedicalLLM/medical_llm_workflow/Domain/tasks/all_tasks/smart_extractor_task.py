@@ -7,11 +7,9 @@
 import json
 from typing import Dict
 
-from medical_llm_workflow.schemas.models import ConversationMessageStatus
-from medical_llm_workflow.Domain.benchmark.SmartExtractor import SmartExtractorFactory
+from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor import EvaluatorAdaptor
 from medical_llm_workflow.Domain.tasks.base_task import BaseTask
-from medical_llm_workflow.Domain.tasks.models import SmartExtractorTaskConfig, TaskRecord
-from medical_llm_workflow.Domain.workflow_context.models import WorkflowContextPort
+from medical_llm_workflow.Domain.tasks.models import SmartExtractorTaskConfig
 
 
 class SmartExtractorTask(BaseTask):
@@ -27,8 +25,8 @@ class SmartExtractorTask(BaseTask):
     def build_prompt(self, args_map: Dict) -> str:
         """根据 evaluator 列表动态构建结构化抽取 prompt。"""
         config: SmartExtractorTaskConfig = self.config
-        expected_schema = SmartExtractorFactory.build_expected_schema(
-            config.evaluator_list,
+        expected_schema = EvaluatorAdaptor.build_expected_schema(
+            config.evaluator_type_list,
         )
 
         schema_text = json.dumps(
@@ -61,7 +59,7 @@ class SmartExtractorTask(BaseTask):
     #     output_message = record.task_context.output[-1]
 
     #     expected_schema = SmartExtractorFactory.build_expected_schema(
-    #         config.evaluator_list,
+    #         config.evaluator_type_list,
     #     )
     #     extraction_result = SmartExtractorFactory.parse_result(
     #         raw_response=str(output_message.content),

@@ -1,23 +1,24 @@
 from __future__ import annotations
 from enum import Enum
+from typing_extensions import TypedDict
 from pydantic import BaseModel
 
 
 # LLM
-class ChatbotType(Enum):
+class ChatbotType(str, Enum):
     """客户端类型。"""
     POE = "poe"
     GLM = "glm"
 
-class BaseChatbotConfig(BaseModel):
+class BaseChatbotConfig(TypedDict):
     """单次模型调用参数配置。"""
     chatbot_type: ChatbotType
     model: PoeChatbotModel | GLMChatbotModel
-    temperature: float = 0.7
-    max_tokens: int = 2048
+    temperature: float
+    max_tokens: int
 
 # Poe
-class PoeChatbotModel(Enum):
+class PoeChatbotModel(str, Enum):
     """Poe 聊天机器人模型枚举。"""
     EMPTY_MODEL = "empty_model" # 占位符模型
     GPT_4_1 = "GPT-4.1"
@@ -27,10 +28,10 @@ class PoeChatbotModel(Enum):
 class PoeChatbotConfig(BaseChatbotConfig):
     """单次模型调用参数配置。"""
     model: PoeChatbotModel
-    
+
 
 # GLM
-class GLMChatbotModel(Enum):
+class GLMChatbotModel(str, Enum):
     """GLM 聊天机器人模型枚举。"""
     EMPTY_MODEL = "empty_model" # 占位符模型
     GLM_3_0 = "GLM-3.0"

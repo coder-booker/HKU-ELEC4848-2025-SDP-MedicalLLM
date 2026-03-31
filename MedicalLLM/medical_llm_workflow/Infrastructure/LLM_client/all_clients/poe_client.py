@@ -41,9 +41,9 @@ class PoeClient(BaseLLMClient):
             模型返回的完整文本响应
         """
         # 将内部消息对象转换为 Poe SDK 协议消息。
-        fp_messages = [
-            fp.ProtocolMessage(role=msg.role.value, content=msg.content) for msg in messages
-        ]
+        fp_messages = []
+        for msg in messages:
+            fp_messages.append(fp.ProtocolMessage(role=msg["role"].value, content=msg["content"]))
 
         # 调用 Poe API
         chunks = []

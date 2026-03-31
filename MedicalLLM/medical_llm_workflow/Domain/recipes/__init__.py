@@ -6,8 +6,8 @@ from .all_recipes.medical_reasoning_3_steps_recipe import MedicalReasoning3Steps
 
 __all__ = [
     "Recipe",
-    "RecipeMeta",
     "RecipeType",
+    "RecipeMeta",
     "RecipeFactory",
     "MedicalReasoning3StepsRecipe",
 ]

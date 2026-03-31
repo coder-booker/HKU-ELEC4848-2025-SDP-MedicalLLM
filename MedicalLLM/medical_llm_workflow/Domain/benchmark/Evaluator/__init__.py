@@ -1,26 +1,28 @@
 """评估器模块导出入口。"""
 
 from .models import (
+    EvaluatorType,
     EvaluationSample,
-    ScoreRecord,
-    BatchEvaluationResult,
+    EvluationRecord,
+    EvluationBatchResult,
     EvaluationArtifacts,
     EvaluationRunOutput,
+    SimpleEvaluatorProtocol,
 )
 from .base_evaluator import BaseEvaluator
 from .evaluator_factory import EvaluatorFactory
-from .models import EvaluatorType
 from .simpleEvaluator.accuracy import AccuracyEvaluator
 
 __all__ = [
+    "EvaluatorType",
     "EvaluationSample",
-    "ScoreRecord",
-    "BatchEvaluationResult",
+    "EvluationRecord",
+    "EvluationBatchResult",
     "EvaluationArtifacts",
     "EvaluationRunOutput",
+    "SimpleEvaluatorProtocol",
     "BaseEvaluator",
     "EvaluatorFactory",
-    "EvaluatorType",
     "AccuracyEvaluator",
 ]
 

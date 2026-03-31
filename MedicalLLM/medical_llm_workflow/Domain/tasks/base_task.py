@@ -53,6 +53,7 @@ class BaseTask:
         # 通过占位符替换把运行时参数注入到 prompt 模板中。
         for key, value in args_map.items():
             prompt = prompt.replace(f"{{{{{key}}}}}", str(value))
+        print(prompt)
 
         return prompt
     
@@ -68,15 +69,16 @@ class BaseTask:
         
         # 获取上下文：默认把上一个任务的输出作为本次任务的输入。
         prev_task_record = workflow_context_port.get_last_task_record() # TODO：先假设所有消息都是单线性且不重复的
-        prev_task_output = prev_task_record.task_context.output if prev_task_record else []
+        prev_task_output = prev_task_record["task_context"]["output"] if prev_task_record else []
         messages.extend(prev_task_output)
         
         # 获取提示词
         task_prompt = self.prompt
-        new_message = ConversationMessage(
-            role=ConversationMessageRole.USER,
-            content=task_prompt,
-        )
+        new_message: ConversationMessage = {
+            "role": ConversationMessageRole.USER,
+            "content": task_prompt,
+            "status": ConversationMessageStatus.NORMAL,
+        }
         messages.append(new_message)
 
         return messages
@@ -104,34 +106,36 @@ class BaseTask:
         # 进行问答
         try:
             # 委托基础设施层与 Poe API 通信。
-            llm_client = ClientFactory.get_client_instance(self.config.chatbot_config.chatbot_type)
+            llm_client = ClientFactory.get_client_instance(self.config.chatbot_config["chatbot_type"])
             response = await llm_client.call_chatbot(
                 messages,
                 self.config.chatbot_config,
             )
-            res_message = ConversationMessage(
-                role=ConversationMessageRole.ASSISTANT,
-                content=response,
-                status=ConversationMessageStatus.COMPLETED,
-            )
+
+            res_message: ConversationMessage = {
+                "role": ConversationMessageRole.BOT,
+                "content": response,
+                "status": ConversationMessageStatus.COMPLETED,
+            }
         except Exception as e:
             # 让上层处理异常
-            res_message = ConversationMessage(
-                role=ConversationMessageRole.ASSISTANT,
-                content=f"Error: {str(e)}",
-                status=ConversationMessageStatus.FAILED,
-            )
+            res_message: ConversationMessage = {
+                "role": ConversationMessageRole.BOT,
+                "content": f"Error: {str(e)}",
+                "status": ConversationMessageStatus.FAILED,
+            }
         
         # 组织输出并保存记录
-        context = TaskContext(
-            input=messages, # TODO: 之后可以再仅保存 id 来节省空间
-            output=[res_message],
-        )
+        context: TaskContext = {
+            "input": messages, # TODO: 之后可以再仅保存 id 来节省空间
+            "output": [res_message],
+        }
         # 记录 task 配置与其输入输出，便于后续任务消费。
-        record = TaskRecord(
-            task_config=self.config,
-            task_context=context,
-        )
+
+        record: TaskRecord = {
+            "task_config": self.config,
+            "task_context": context,
+        }
         workflow_context_port.append_task_record(record)
         
         return record

@@ -11,11 +11,14 @@ from medical_llm_workflow.Domain.tasks.models import TaskConfig
 from medical_llm_workflow.Domain.recipes.models import RecipeMeta
 
 
-class Recipe(ABC):
-	"""Recipe 抽象基类。"""
+class Recipe():
+    """Recipe 抽象基类。"""
 
-	meta: RecipeMeta
+    meta: RecipeMeta
+    
+    def __init__(self, chatbot_config: BaseChatbotConfig) -> None:
+        self.chatbot_config = chatbot_config
 
-	@abstractmethod
-	def build_task_configs(self, chatbot_config: BaseChatbotConfig) -> List[TaskConfig]:
-		"""基于 chatbot 配置生成任务链。"""
+    @abstractmethod
+    def build_task_configs(self) -> List[TaskConfig]:
+        """基于 chatbot 配置生成任务链。"""

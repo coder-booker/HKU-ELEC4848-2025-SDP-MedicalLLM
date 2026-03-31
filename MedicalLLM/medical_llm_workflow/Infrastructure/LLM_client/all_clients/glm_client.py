@@ -37,7 +37,7 @@ class GLMClient(BaseLLMClient):
         return await asyncio.to_thread(self._call_chatbot_sync, messages, chatbot_config)
 
     def _call_chatbot_sync(self, messages: List[ConversationMessage], chatbot_config: GLMChatbotConfig) -> str:
-        glm_messages = [{"role": msg.role.value, "content": msg.content} for msg in messages]
+        glm_messages = [{"role": msg["role"].value, "content": msg["content"]} for msg in messages]
         requested_model = str(chatbot_config.model.value)
         model_name = requested_model if requested_model.startswith("glm") else "glm-4.5"
         payload = {

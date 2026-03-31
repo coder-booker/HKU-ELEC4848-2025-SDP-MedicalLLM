@@ -2,9 +2,10 @@
 
 from enum import Enum
 import uuid
-from typing import Any, Dict, List, Optional, TypedDict
-
+from typing import Any, Dict, List, Optional
+from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
+import json
 
 from medical_llm_workflow.schemas.models import ConversationMessage
 from medical_llm_workflow.Infrastructure.LLM_client.models import BaseChatbotConfig
@@ -14,7 +15,7 @@ from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
 
 
 # BaseTask
-class TaskType(Enum):
+class TaskType(str, Enum):
     """任务执行模式。"""
 
     PLAIN_TEXT = "plain_text"  # 纯文本任务，仅用于传递文本
@@ -25,7 +26,7 @@ class TaskType(Enum):
     # 后续可扩展：SELF_CONSISTENCY, MULTI_AGENT 等
 
 
-class MedicalType(Enum):  # 特殊状态，用来区分临床推理各步骤
+class MedicalType(str, Enum):  # 特殊状态，用来区分临床推理各步骤
     # SYSTEM = "system" # TODO：先不考虑 system 角色，这本质上就是 prompt 的一部分而已
     QUESTION = "question"
 
@@ -34,7 +35,7 @@ class MedicalType(Enum):  # 特殊状态，用来区分临床推理各步骤
     HYPOTHESIS_EVALUATION = "hypothesis_evaluation"  # 假设评估，包含了最终答案
 
     DEFAULT = "default"  # 默认值，暂时理解为占位符
-    # ASSISTANT = "assistant" # AI 输出 TODO 不知道需不需要，先保留
+    # BOT = "assistant" # AI 输出 TODO 不知道需不需要，先保留
 
 
 class TaskContext(TypedDict):
@@ -45,6 +46,13 @@ class TaskContext(TypedDict):
 
     input: List[ConversationMessage]
     output: List[ConversationMessage]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """把 TaskContext 转换为普通字典，方便打印输出。"""
+        return {
+            "input": [message.model_dump() for message in self["input"]],
+            "output": [message.model_dump() for message in self["output"]],
+        }
 
 
 class TaskConfig(BaseModel):
@@ -78,6 +86,20 @@ class TaskConfig(BaseModel):
 
     # TODO：下游任务 id 列表，决定了该任务的输出会传递给哪些下游任务
     connect_to: List[str] = Field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """把 TaskConfig 转换为普通字典，方便打印输出。"""
+        return {
+            "id": str(self.id),
+            "type": self.type.value,
+            "medical_type": self.medical_type.value,
+            "chatbot_config": json.dumps(self.chatbot_config, ensure_ascii=False, indent=2) if self.chatbot_config else "",
+            "max_retries": self.max_retries,
+            "timeout": self.timeout,
+            "prompt_args_map": json.dumps(self.prompt_args_map, ensure_ascii=False, indent=2),
+            "prompt_template": self.prompt_template.model_dump() if self.prompt_template else "",
+            "connect_to": self.connect_to,
+        }
 
 
 class PlainTextTaskConfig(TaskConfig):
@@ -93,13 +115,13 @@ class PlainTextTaskConfig(TaskConfig):
     - connect_to: List[str] - 该任务的输出将传递给哪些下游任务
     """
 
-    type: TaskType = Field(default=TaskType.PLAIN_TEXT)
+    type: TaskType = TaskType.PLAIN_TEXT
     prompt_template: PromptTemplate
-    chatbot_config: Optional[BaseChatbotConfig]
+    chatbot_config: Optional[BaseChatbotConfig] = None
 
 class EvaluationTaskConfig(TaskConfig):
     """
-    - evaluator_list: List[EvaluatorType] - 评测使用的评测器列表
+    - evaluator_type_list: List[EvaluatorType] - 评测使用的评测器列表
     - question_list: List[Dict[str, str]] - 评测题目列表
     - id: str - 任务唯一标识
     - type: TaskType.EVALUATION - 任务类型
@@ -115,7 +137,7 @@ class EvaluationTaskConfig(TaskConfig):
     type: TaskType = Field(default=TaskType.EVALUATION)
     
     # 给 factory 用的
-    evaluator_list: List[EvaluatorType]
+    evaluator_type_list: List[EvaluatorType]
     
     # 题目
     question_list: List[Dict[str, str]]
@@ -123,7 +145,7 @@ class EvaluationTaskConfig(TaskConfig):
 
 class SmartExtractorTaskConfig(TaskConfig):
     """
-    - evaluator_list: List[EvaluatorType] - 评测使用的评测器列表
+    - evaluator_type_list: List[EvaluatorType] - 评测使用的评测器列表
     - id: str - 任务唯一标识
     - type: TaskType.SMART_EXTRACTOR - 任务类型
     - medical_type: MedicalType - 医学步骤类型
@@ -138,10 +160,10 @@ class SmartExtractorTaskConfig(TaskConfig):
     type: TaskType = Field(default=TaskType.SMART_EXTRACTOR)
 
     # 用 evaluator 列表动态决定抽取 schema，避免硬编码固定字段。
-    evaluator_list: List[EvaluatorType]
+    evaluator_type_list: List[EvaluatorType]
 
 
-class TaskRecord(BaseModel):
+class TaskRecord(TypedDict):
     """
     - task_config: TaskConfig - 任务配置
     - task_context: TaskContext - 任务执行过程中的输入输出上下文

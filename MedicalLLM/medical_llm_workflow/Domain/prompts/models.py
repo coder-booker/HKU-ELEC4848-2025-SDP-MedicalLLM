@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 # Prompt
-class PromptType(Enum):
+class PromptType(str, Enum):
     """提示词组织方式。"""
     STRUCTURED = "structured"
     COT = "chain_of_thought"

@@ -44,7 +44,7 @@ class BaseEvaluator(ABC):
         self.compare_fn: CompareFn = compare_fn or self.default_compare
 
     @abstractmethod
-    def default_compare(self, prediction: Any, target: Any, params: Dict[str, Any]) -> float:
+    def default_compare(self, prediction: Any, ground_truth: Any) -> float:
         """默认评分函数（当未注入 compare_fn 时使用）。"""
 
     def normalize_prediction(self, raw_prediction: Any) -> Any:
@@ -54,7 +54,7 @@ class BaseEvaluator(ABC):
 
     def _build_summary(self, records: List[EvluationRecord]) -> Dict[str, Any]:
         """构建默认摘要。"""
-        hit_count = sum(1 for r in records if r.score >= 1.0)
+        hit_count = sum(1 for r in records if r["score"] >= 1.0)
         return {
             "hit_count": hit_count,
             "hit_rate": (hit_count / len(records)) if records else 0.0,
@@ -62,13 +62,13 @@ class BaseEvaluator(ABC):
 
     def build_chart_mermaid(self, result: EvluationBatchResult) -> str:
         """生成 Mermaid 条形图（文本）。"""
-        avg = round(result.average_score, 4)
-        min_v = round(result.min_score, 4)
-        max_v = round(result.max_score, 4)
+        avg = round(result["average_score"], 4)
+        min_v = round(result["min_score"], 4)
+        max_v = round(result["max_score"], 4)
 
         return (
             "xychart-beta\n"
-            f'    title "{result.metric_name} summary"\n'
+            f'    title "{result["metric_name"]} summary"\n'
             '    x-axis ["average", "min", "max"]\n'
             '    y-axis "score" 0 --> 1\n'
             f"    bar [{avg}, {min_v}, {max_v}]\n"
@@ -77,19 +77,19 @@ class BaseEvaluator(ABC):
     def build_report_markdown(self, result: EvluationBatchResult) -> str:
         """生成 Markdown 报告内容。"""
         lines: List[str] = []
-        lines.append(f"# Evaluation Report - {result.evaluator_name}")
+        lines.append(f"# Evaluation Report - {result['evaluator_name']}")
         lines.append("")
-        lines.append(f"- Metric: {result.metric_name}")
+        lines.append(f"- Metric: {result['metric_name']}")
         lines.append(f"- Total Samples: {result.total_samples}")
-        lines.append(f"- Average Score: {result.average_score:.4f}")
-        lines.append(f"- Min Score: {result.min_score:.4f}")
-        lines.append(f"- Max Score: {result.max_score:.4f}")
-        lines.append(f"- Params: {result.params}")
+        lines.append(f"- Average Score: {result['average_score']:.4f}")
+        lines.append(f"- Min Score: {result['min_score']:.4f}")
+        lines.append(f"- Max Score: {result['max_score']:.4f}")
+        # lines.append(f"- Params: {result.params}")
         lines.append("")
 
         lines.append("## Summary")
         lines.append("")
-        for key, value in result.summary.items():
+        for key, value in result["summary"].items():
             lines.append(f"- {key}: {value}")
         lines.append("")
 
@@ -102,11 +102,11 @@ class BaseEvaluator(ABC):
 
         lines.append("## Per Sample")
         lines.append("")
-        lines.append("| sample_id | score | prediction | target |")
+        lines.append("| sample_id | score | prediction | ground_truth |")
         lines.append("|---|---:|---|---|")
-        for record in result.records:
+        for record in result["records"]:
             lines.append(
-                f"| {record.sample_id} | {record.score:.4f} | {record.prediction} | {record.target} |"
+                f"| {record['score']:.4f} | {record['prediction']} | {record['ground_truth']} |"
             )
 
         lines.append("")
@@ -115,15 +115,20 @@ class BaseEvaluator(ABC):
     
     def evaluate_one(self, sample: EvaluationSample) -> EvluationRecord:
         """评分单条样本。"""
-        score = float(self.compare_fn(sample["prediction"], sample["target"], self.params))
+        score = float(
+            self.compare_fn(
+                sample["llm_output_dict"],
+                sample["dataset_ground_truth_dict"],
+            )
+        )
         # 统一钳制到 [0, 1]，避免注入函数异常返回污染统计。
         score = max(0.0, min(1.0, score))
         
         return {
             # "sample_id": sample[],
             "score": score,
-            "prediction": sample.prediction,
-            "target": sample.target,
+            "prediction_dict": sample["llm_output_dict"],
+            "ground_truth_dict": sample["dataset_ground_truth_dict"],
         }
 
     def evaluate_batch(self, sample_list: List[EvaluationSample]) -> EvluationBatchResult:

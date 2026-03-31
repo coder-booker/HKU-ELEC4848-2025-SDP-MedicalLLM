@@ -35,9 +35,9 @@ class EvaluationTask(BaseTask):
     def build_prompt(self, args_map: Dict) -> str:
         """构建 evaluator 的结构化输出提示词。"""
         config: EvaluationTaskConfig = self.config
-        evaluator_list = config.evaluator_list
+        evaluator_type_list = config.evaluator_type_list
         evaluator_prompt_structure = {}
-        for evaluator_type in evaluator_list:
+        for evaluator_type in evaluator_type_list:
             # 获取评测器的结构化输出提示词
             evaluator_prompt_structure |= EvaluatorFactory.get_evaluator_llm_protocol(evaluator_type)
         
@@ -54,64 +54,64 @@ class EvaluationTask(BaseTask):
         
         return task_prompt
 
-    async def execute(
-        self,
-        workflow_context_port: WorkflowContextPort,
-    ) -> TaskRecord:
-        """
-        执行评估任务，跳过基类执行行为（跳过 llm 运行）。
+    # async def execute(
+    #     self,
+    #     workflow_context_port: WorkflowContextPort,
+    # ) -> TaskRecord:
+    #     """
+    #     执行评估任务，跳过基类执行行为（跳过 llm 运行）。
 
-        Args:
-            workflow_context_port: 工作流上下文接口
+    #     Args:
+    #         workflow_context_port: 工作流上下文接口
 
-        Returns:
-            任务记录，包含输入消息作为输出
-        """
-        # steps
-        # 1. 获取 LLM 对问题的最终答案，也就是上一个任务的输出。
-        messages = self.get_messages_for_llm_call(workflow_context_port)
+    #     Returns:
+    #         任务记录，包含输入消息作为输出
+    #     """
+    #     # steps
+    #     # 1. 获取 LLM 对问题的最终答案，也就是上一个任务的输出。
+    #     messages = self.get_messages_for_llm_call(workflow_context_port)
         
-        # 2. 叫 LLM 结构化，直接取 prompt 就行
+    #     # 2. 叫 LLM 结构化，直接取 prompt 就行
         
         
-        # 3. 启动 evaluator 进行评测，得到评测结果。
-            # 创建测评器
-            # 注入 compareFn
-            # 获取评测输入（question, answer, rubric）
-            # 生成评测结果
-        # 3. 用什么方式放出去？Dict就行
+    #     # 3. 启动 evaluator 进行评测，得到评测结果。
+    #         # 创建测评器
+    #         # 注入 compareFn
+    #         # 获取评测输入（question, answer, rubric）
+    #         # 生成评测结果
+    #     # 3. 用什么方式放出去？Dict就行
         
-        # 进行问答
-        try:
-            # TODO：更好地适配起始的 question
-            # 委托基础设施层与 Poe API 通信。
-            response = await self.llm_client.call_chatbot(
-                messages,
-                self.config.chatbot_config,
-            )
-            res_message = ConversationMessage(
-                role=ConversationMessageRole.ASSISTANT,
-                content=response,
-                status=ConversationMessageStatus.COMPLETED,
-            )
-        except Exception as e:
-            # 让上层处理异常
-            res_message = ConversationMessage(
-                role=ConversationMessageRole.ASSISTANT,
-                content=f"Error: {str(e)}",
-                status=ConversationMessageStatus.FAILED,
-            )
+    #     # 进行问答
+    #     try:
+    #         # TODO：更好地适配起始的 question
+    #         # 委托基础设施层与 Poe API 通信。
+    #         response = await self.llm_client.call_chatbot(
+    #             messages,
+    #             self.config.chatbot_config,
+    #         )
+    #         res_message = ConversationMessage(
+    #             role=ConversationMessageRole.BOT,
+    #             content=response,
+    #             status=ConversationMessageStatus.COMPLETED,
+    #         )
+    #     except Exception as e:
+    #         # 让上层处理异常
+    #         res_message = ConversationMessage(
+    #             role=ConversationMessageRole.BOT,
+    #             content=f"Error: {str(e)}",
+    #             status=ConversationMessageStatus.FAILED,
+    #         )
         
-        # 组织输出并保存记录
-        context = TaskContext(
-            input=messages, # TODO: 之后可以再仅保存 id 来节省空间
-            output=[res_message],
-        )
-        # 记录 task 配置与其输入输出，便于后续任务消费。
-        record = TaskRecord(
-            task_config=self.config,
-            task_context=context,
-        )
-        workflow_context_port.append_task_record(record)
+    #     # 组织输出并保存记录
+    #     context = TaskContext(
+    #         input=messages, # TODO: 之后可以再仅保存 id 来节省空间
+    #         output=[res_message],
+    #     )
+    #     # 记录 task 配置与其输入输出，便于后续任务消费。
+    #     record = TaskRecord(
+    #         task_config=self.config,
+    #         task_context=context,
+    #     )
+    #     workflow_context_port.append_task_record(record)
         
-        return record
+    #     return record

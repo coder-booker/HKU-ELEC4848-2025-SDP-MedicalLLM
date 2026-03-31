@@ -14,16 +14,10 @@ from medical_llm_workflow.Domain.tasks.all_tasks.hypothesis_evaluation_task impo
 from medical_llm_workflow.Domain.tasks.all_tasks.evaluation_task import EvaluationTask
 from medical_llm_workflow.Domain.tasks.all_tasks.smart_extractor_task import SmartExtractorTask
 from medical_llm_workflow.Domain.tasks.models import (
-    PlainTextTaskConfig,
     TaskConfig,
     TaskType,
     MedicalType,
 )
-from medical_llm_workflow.Infrastructure.LLM_client.models import (
-    PoeChatbotConfig,
-    PoeChatbotModel,
-)
-from medical_llm_workflow.Domain.prompts.models import PromptTemplate
 
 
 class TaskFactory:

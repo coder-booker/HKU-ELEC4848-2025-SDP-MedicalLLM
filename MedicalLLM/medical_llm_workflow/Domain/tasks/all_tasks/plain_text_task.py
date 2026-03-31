@@ -7,9 +7,10 @@ from __future__ import annotations
 from typing import Dict, Any
 
 from ..base_task import BaseTask
-from medical_llm_workflow.schemas.models import (
+from medical_llm_workflow.schemas import (
     ConversationMessageRole,
     ConversationMessage,
+    ConversationMessageStatus,
 )
 from medical_llm_workflow.Domain.tasks.models import (
     TaskContext,
@@ -41,35 +42,28 @@ class PlainTextTask(BaseTask):
         prompt_text = self.config.prompt_template.text if self.config.prompt_template else ""
         if not prompt_text:
             # 返回 fail 状态的 record 以示警告，但不抛异常中断流程。
-            task_context = TaskContext(
-                input=[],
-                output=[ConversationMessage(
-                    role=ConversationMessageRole.ASSISTANT,
-                    content="Error: No question text provided.",
-                    status="FAILED",
-                )],
-            )
-            task_record = TaskRecord(
-                task_config=self.config,
-                task_context=task_context,
-            )
-            workflow_context_port.append_task_record(task_record)
-            return task_record
+            msg: ConversationMessage = {
+                "role": ConversationMessageRole.BOT,
+                "content": "Error: No prompt text provided for PlainTextTask.",
+                "status": ConversationMessageStatus.FAILED,
+            }
+        else:
+            msg: ConversationMessage = {
+                "role": ConversationMessageRole.USER,
+                "content": prompt_text,
+                "status": ConversationMessageStatus.NORMAL,
+            }
         
-        msg = ConversationMessage(
-            role=ConversationMessageRole.USER,
-            content=prompt_text,
-        )
         # 直接使用输入消息作为输出
-        task_context = TaskContext(
-            input=[],
-            output=[msg],
-        )
+        task_context: TaskContext = {
+            "input": [],
+            "output": [msg],
+        }
 
-        task_record = TaskRecord(
-            task_config=self.config,
-            task_context=task_context,
-        )
+        task_record: TaskRecord = {
+            "task_config": self.config,
+            "task_context": task_context,
+        }
         
         workflow_context_port.append_task_record(task_record)
 

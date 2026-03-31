@@ -7,7 +7,6 @@ from typing import List
 
 from ..base_task import BaseTask
 from medical_llm_workflow.schemas.models import (
-    ConversationMessageRole,
     ConversationMessage,
 )
 from medical_llm_workflow.Domain.workflow_context.models import (
@@ -32,7 +31,7 @@ You can find the Problem Representation result and Hypothesis Generation result 
         # 获得问题表述和假设生成的消息，作为评估阶段的输入。
         messages = super().get_messages_for_llm_call(workflow_context_port) # 这里会返回 上一次输出（假设生成） + prompt
         all_records = workflow_context_port.get_all_records()
-        question_representation_messages = all_records[-2].task_context.output # TODO: 这里必须 hardcode 先
+        question_representation_messages = all_records[-2]["task_context"]['output'][0] # TODO: 这里必须 hardcode 先, 包括[-2]和['output'][0]
         messages.insert(0, question_representation_messages)
 
         return messages

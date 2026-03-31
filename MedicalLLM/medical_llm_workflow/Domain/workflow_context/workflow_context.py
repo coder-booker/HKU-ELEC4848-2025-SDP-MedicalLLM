@@ -3,7 +3,7 @@
 该模块维护任务执行历史，并提供查询/追加接口，
 供任务执行器在不同步骤之间共享消息与结果。
 """
-from typing import List, Dict
+from typing import List, Optional
 
 from medical_llm_workflow.Domain.tasks.models import TaskRecord
 from medical_llm_workflow.Infrastructure import LinkedHashList
@@ -17,7 +17,7 @@ class WorkflowContext:
         self.workflow_id = workflow_id
         self.conversation_history = LinkedHashList()
 
-    def get_previous_task_record(self, task_id: str) -> TaskRecord:
+    def get_previous_task_record(self, task_id: str) -> Optional[TaskRecord]:
         """
         获取当前对话历史（返回拷贝）。
 
@@ -28,16 +28,13 @@ class WorkflowContext:
             对话消息列表的拷贝
         """
         # 基于链表索引定位指定任务的上一个记录。
-        prev_task_context = self.conversation_history.get_prev(task_id)
-        return prev_task_context
-    
-    def last_task_record(self) -> TaskRecord:
-        """获取最后一条记录（返回拷贝）。"""
-        return self.conversation_history.get_tail()
+        record_node = self.conversation_history.get_prev(task_id)
+        return record_node.value
 
-    def get_last_task_record(self) -> TaskRecord:
-        """获取最后一条记录（兼容 BaseTask 调用接口）。"""
-        return self.last_task_record()
+    def get_last_task_record(self) -> Optional[TaskRecord]:
+        """获取最后一条记录。"""
+        record_node = self.conversation_history.get_tail()
+        return record_node.value
     
     # def get_all_prev_task_records(self, task_id: str) -> List[TaskRecord]:
     #     """
@@ -67,7 +64,7 @@ class WorkflowContext:
             content: 消息内容
         """
         # 以任务 id 为键写入，既保序也支持 O(1) 索引。
-        self.conversation_history.append(record.task_config.id, record)
+        self.conversation_history.append(record["task_config"].id, record)
 
     def get_task_record(self, task_id: str) -> TaskRecord:
         """按任务 id 获取单条记录。"""

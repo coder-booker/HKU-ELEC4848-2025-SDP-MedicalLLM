@@ -29,8 +29,7 @@ from medical_llm_workflow.Domain.benchmark.Evaluator import (
 )
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
 from medical_llm_workflow.Domain.benchmark.Dataset.models import DatasetConfig, DatasetType
-from medical_llm_workflow.Domain.benchmark.SmartExtractor.extractor_factory import SmartExtractorFactory
-from medical_llm_workflow.Domain.benchmark.DatasetEvaluatorConnector.simple_connector import DatasetSimpleEvaluatorConnector
+from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import EvaluatorAdaptor
 
 
 class DatasetInletItem(BaseModel):
@@ -54,7 +53,7 @@ class Workflow:
         name: str = "Default Workflow Name",
         task_config_list: List[TaskConfig] = Field(default_factory=list),
         dataset_config_list: List[DatasetConfig] = Field(default_factory=list),
-        evaluator_list: List[EvaluatorType] = Field(default_factory=list),
+        evaluator_type_list: List[EvaluatorType] = Field(default_factory=list),
         # language: LanguageType = LanguageType.EN # 整条工作流的语言
     ):
         """保存工作流配置并初始化上下文容器。"""
@@ -64,7 +63,7 @@ class Workflow:
         # 避免外部列表引用导致运行中被意外修改。
         self.task_config_list = list(task_config_list)
         self.dataset_config_list = list(dataset_config_list)
-        self.evaluator_list = list(evaluator_list)
+        self.evaluator_type_list = list(evaluator_type_list)
 
         self.workflow_context = WorkflowContext(
             workflow_id=self.id,
@@ -102,7 +101,7 @@ class Workflow:
                     DatasetInletItem(
                         dataset_type=dataset_config.dataset_type,
                         text_question=text_formatted_question,
-                        json_question=formatted_question.model_dump(),
+                        json_question=formatted_question,
                     ),
                 )
 
@@ -120,7 +119,7 @@ class Workflow:
 
         extractor_task_config = SmartExtractorTaskConfig(
             chatbot_config=extractor_chatbot_config,
-            evaluator_list=self.evaluator_list.copy(),
+            evaluator_type_list=self.evaluator_type_list.copy(),
         )
 
         return extractor_task_config
@@ -131,39 +130,37 @@ class Workflow:
         dataset_inlet_item_list: List[DatasetInletItem],
     ) -> Dict[str, Any]:
         """执行全部 evaluator，并在最后融合输出一份统一报告。"""
-        print("Evaluation Results ===")
-        evaluation_schema = SmartExtractorFactory.build_expected_schema(self.evaluator_list)
+        print("=== Evaluation Results ===")
+        evaluation_schema = EvaluatorAdaptor.build_expected_schema(self.evaluator_type_list)
 
         evaluation_sample_list: List[EvaluationSample] = []
         # 从 extractor 的结构化输出读取 prediction，再组评测样本。
         for index, workflow_context in enumerate(all_workflow_contexts):
-            # Normalize 给 evaluator 用的金标答案。
+            # 收集 dataset 的结构化题目并适配到当前 evaluator 需要的格式
             dataset_inlet_item = dataset_inlet_item_list[index]
-            answer = DatasetSimpleEvaluatorConnector.dataset_to_evaluator_protocol(
+            dataset_ground_truth_dict = EvaluatorAdaptor.parse_dataset_question_to_evaluator_schema(
                 dataset_type=dataset_inlet_item.dataset_type,
                 dataset_json_question=dataset_inlet_item.json_question,
+                evaluator_type_list=self.evaluator_type_list,
             )
 
+            # 收集 llm 的结构化输出并适配到当前 evaluator 需要的格式
             # 最后一个 task record 应该是 SmartExtractorTask，读取其结构化输出作为 prediction。
             final_task_record = workflow_context.get_last_task_record()
-            final_output_message_content = final_task_record.task_context["output"][-1].content
-
-            prediction = SmartExtractorFactory.parse_result(
-                raw_response=final_output_message_content,
+            final_output_message_content = final_task_record["task_context"]["output"][-1]["content"]
+            llm_output_dict = EvaluatorAdaptor.parse_extracted_data_to_evaluator_schema(
+                text_json_response=final_output_message_content,
                 expected_schema=evaluation_schema,
             )
 
-            evaluation_sample_list.append(
-                {
-                    "answer": answer,
-                    "prediction": prediction,
-                },
-            )
+            evaluation_sample_list.append({
+                "llm_output_dict": llm_output_dict,
+                "dataset_ground_truth_dict": dataset_ground_truth_dict,
+            })
 
         # 先执行全部 evaluator，只保留内存中的评测结果，最后统一融合写报告。
         evaluation_result_list: List[Dict[str, Any]] = []
-        for evaluator_type in self.evaluator_list:
-            print(f"Evaluator {evaluator_type.value} ===")
+        for evaluator_type in self.evaluator_type_list:
             evaluator = EvaluatorFactory.create(
                 evaluator_type=evaluator_type,
             )
@@ -182,7 +179,7 @@ class Workflow:
                 },
             )
 
-            print(f"- Evaluator: {evaluator_type.value}")
+            print(f"  Evaluator: {evaluator_type.value}")
             print(f"  Average Score: {evaluation_result['average_score']:.4f}")
             print(f"  Summary: {evaluation_result['summary']}")
 
@@ -263,11 +260,11 @@ class Workflow:
             task = TaskFactory.create(task_config)
             task_record = await task.execute(workflow_context)
 
-            for task_output in task_record.task_context["output"]:
+            for task_output_msg in task_record["task_context"]["output"]:
                 # 一旦任何任务输出标记为 FAILED，直接中止整个流程。
-                if task_output.status == ConversationMessageStatus.FAILED:
+                if task_output_msg["status"] == ConversationMessageStatus.FAILED:
                     raise Exception(
-                        f"Task {task.config.id} failed with error: {task_output.content}",
+                        f"Task {task.config.id} failed with error: {task_output_msg['content']}",
                     )
 
         return workflow_context

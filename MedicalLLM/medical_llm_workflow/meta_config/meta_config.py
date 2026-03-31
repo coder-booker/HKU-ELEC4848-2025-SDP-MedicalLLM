@@ -4,7 +4,7 @@
 """
 from enum import Enum
 
-# class DebugConfig(Enum):
+# class DebugConfig(str, Enum):
 #     """调试模式枚举。"""
 #     FAKE_POE: str = "fake_poe"
 #     REAL_POE: str = "real_poe"
