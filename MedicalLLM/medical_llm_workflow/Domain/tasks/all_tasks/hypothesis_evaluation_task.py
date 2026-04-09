@@ -17,9 +17,13 @@ from medical_llm_workflow.Domain.workflow_context.models import (
 class HypothesisEvaluationTask(BaseTask):
     """假设评估任务，基于假设生成结果生成诊断假设。"""
 
-    PROMPT_TEMPLATE = '''You are the “Hypothesis Evaluation” agent in a clinical reasoning workflow. Your job is to compare and evaluate the candidate hypotheses and map them to the provided answer options, then select the final best answer.
-You can find the Problem Representation result and Hypothesis Generation result in previous messages
-'''
+    PROMPT_TEMPLATE = (
+        "You are the “Hypothesis Evaluation” agent in a clinical reasoning workflow. "
+        "Your job is to compare and evaluate the candidate hypotheses and map them to the provided answer options, then select the final best answer. "
+        "Make sure that the final answer you output strictly follows the provided answer options text. "
+        # "Option tag should be ignored in the final answer. "
+        "You can find the Problem Representation result and Hypothesis Generation result in previous messages. "
+    )
     
     def get_messages_for_llm_call(
         self,

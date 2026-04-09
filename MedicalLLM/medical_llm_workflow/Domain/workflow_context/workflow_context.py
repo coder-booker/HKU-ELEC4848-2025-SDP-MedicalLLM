@@ -4,18 +4,24 @@
 供任务执行器在不同步骤之间共享消息与结果。
 """
 from typing import List, Optional
+import uuid
 
 from medical_llm_workflow.Domain.tasks.models import TaskRecord
 from medical_llm_workflow.Infrastructure import LinkedHashList
 
 
+
 class WorkflowContext:
     """上下文管理器，同时提供用于操作对话历史的工具。"""
     
-    def __init__(self, workflow_id):
+    def __init__(self, workflow_id: uuid.UUID):
         """初始化工作流上下文与有序历史容器。"""
-        self.workflow_id = workflow_id
+        self.workflow_id: uuid.UUID = workflow_id
         self.conversation_history = LinkedHashList()
+    
+    def get_workflow_id(self) -> uuid.UUID:
+        """获取工作流 ID。"""
+        return self.workflow_id
 
     def get_previous_task_record(self, task_id: str) -> Optional[TaskRecord]:
         """

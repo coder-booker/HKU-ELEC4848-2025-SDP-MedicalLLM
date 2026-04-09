@@ -21,8 +21,10 @@ class BaseChatbotConfig(TypedDict):
 class PoeChatbotModel(str, Enum):
     """Poe 聊天机器人模型枚举。"""
     EMPTY_MODEL = "empty_model" # 占位符模型
-    GPT_4_1 = "GPT-4.1"
-    GPT_5_1 = "GPT-5.1"
+    GPT_4_1 = "gpt-4.1"
+    GPT_5_1 = "gpt-5.1"
+    MINIMAX_M2_7 = "minimax-m2.7"
+    GPT_5_4_NANO = "gpt-5.4-nano"
     # 可根据需要添加更多模型
 
 class PoeChatbotConfig(BaseChatbotConfig):

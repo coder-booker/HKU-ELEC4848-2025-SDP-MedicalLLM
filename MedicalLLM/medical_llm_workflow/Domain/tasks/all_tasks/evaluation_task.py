@@ -32,7 +32,7 @@ class EvaluationTask(BaseTask):
     PROMPT_TEMPLATE = '''Output the final answer as the following JSON format. Do not output any other text outside the JSON format.:
 '''
     
-    def build_prompt(self, args_map: Dict) -> str:
+    def build_prompt(self) -> str:
         """构建 evaluator 的结构化输出提示词。"""
         config: EvaluationTaskConfig = self.config
         evaluator_type_list = config.evaluator_type_list
@@ -90,14 +90,14 @@ class EvaluationTask(BaseTask):
     #             self.config.chatbot_config,
     #         )
     #         res_message = ConversationMessage(
-    #             role=ConversationMessageRole.BOT,
+    #             role=ConversationMessageRole.USER,
     #             content=response,
     #             status=ConversationMessageStatus.COMPLETED,
     #         )
     #     except Exception as e:
     #         # 让上层处理异常
     #         res_message = ConversationMessage(
-    #             role=ConversationMessageRole.BOT,
+    #             role=ConversationMessageRole.USER,
     #             content=f"Error: {str(e)}",
     #             status=ConversationMessageStatus.FAILED,
     #         )

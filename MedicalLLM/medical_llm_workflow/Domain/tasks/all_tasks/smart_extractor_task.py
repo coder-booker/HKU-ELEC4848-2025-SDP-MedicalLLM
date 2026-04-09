@@ -4,42 +4,54 @@
 并调用 LLM 把上游最终推理结果抽取为可评测的标准化字段。
 """
 
-import json
-from typing import Dict
+from typing import List
 
-from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor import EvaluatorAdaptor
 from medical_llm_workflow.Domain.tasks.base_task import BaseTask
-from medical_llm_workflow.Domain.tasks.models import SmartExtractorTaskConfig
+from medical_llm_workflow.schemas import (
+    ConversationMessage,
+)
+from medical_llm_workflow.Domain.workflow_context import (
+    WorkflowContextPort,
+)
 
 
 class SmartExtractorTask(BaseTask):
     """Evaluator 驱动的结构化抽取任务。"""
 
     PROMPT_TEMPLATE = (
-        "Extract the final answer from the previous assistant response. "
+        "Extract the final answer from the previous assistant response."
         "Output ONLY valid JSON without markdown and without additional text.\n"
         "Expected JSON schema:\n"
         "{{SCHEMA}}\n"
     )
+    def get_messages_for_llm_call(self, workflow_context_port: WorkflowContextPort) -> List[ConversationMessage]:
+        messages: List[ConversationMessage] = super().get_messages_for_llm_call(workflow_context_port)
+        
+        all_records = workflow_context_port.get_all_records()
+        question = all_records[0]["task_context"]["output"][0]
+        messages.insert(0, question)
+        
+        return messages
+    
 
-    def build_prompt(self, args_map: Dict) -> str:
-        """根据 evaluator 列表动态构建结构化抽取 prompt。"""
-        config: SmartExtractorTaskConfig = self.config
-        expected_schema = EvaluatorAdaptor.build_expected_schema(
-            config.evaluator_type_list,
-        )
+    # def build_prompt(self, args_map: Dict) -> str:
+    #     """根据 evaluator 列表动态构建结构化抽取 prompt。"""
+    #     config: SmartExtractorTaskConfig = self.config
+    #     expected_schema = EvaluatorAdaptor.build_expected_schema(
+    #         config.evaluator_type_list,
+    #     )
 
-        schema_text = json.dumps(
-            expected_schema,
-            ensure_ascii=False,
-            indent=2,
-        )
+    #     schema_text = json.dumps(
+    #         expected_schema,
+    #         ensure_ascii=False,
+    #         indent=2,
+    #     )
 
-        return super().build_prompt(
-            args_map={
-                "SCHEMA": schema_text,
-            },
-        )
+    #     return super().build_prompt(
+    #         args_map={
+    #             "SCHEMA": schema_text,
+    #         },
+    #     )
 
     # async def execute(
     #     self,

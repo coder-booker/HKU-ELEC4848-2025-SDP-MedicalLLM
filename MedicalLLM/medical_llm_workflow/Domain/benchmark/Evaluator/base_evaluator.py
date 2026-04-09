@@ -47,7 +47,7 @@ class BaseEvaluator(ABC):
     def default_compare(self, prediction: Any, ground_truth: Any) -> float:
         """默认评分函数（当未注入 compare_fn 时使用）。"""
 
-    def normalize_prediction(self, raw_prediction: Any) -> Any:
+    def normalize_compare_element(self, raw_prediction: Any) -> Any:
         """把工作流原始输出归一化为评测输入。"""
         # 默认不做转换，交给具体 evaluator 按指标语义覆盖。
         return raw_prediction
@@ -117,8 +117,8 @@ class BaseEvaluator(ABC):
         """评分单条样本。"""
         score = float(
             self.compare_fn(
-                sample["llm_output_dict"],
-                sample["dataset_ground_truth_dict"],
+                self.normalize_compare_element(sample["llm_output_dict"]),
+                self.normalize_compare_element(sample["dataset_ground_truth_dict"]),
             )
         )
         # 统一钳制到 [0, 1]，避免注入函数异常返回污染统计。
@@ -127,8 +127,8 @@ class BaseEvaluator(ABC):
         return {
             # "sample_id": sample[],
             "score": score,
-            "prediction_dict": sample["llm_output_dict"],
-            "ground_truth_dict": sample["dataset_ground_truth_dict"],
+            "prediction": sample["llm_output_dict"],
+            "ground_truth": sample["dataset_ground_truth_dict"],
         }
 
     def evaluate_batch(self, sample_list: List[EvaluationSample]) -> EvluationBatchResult:

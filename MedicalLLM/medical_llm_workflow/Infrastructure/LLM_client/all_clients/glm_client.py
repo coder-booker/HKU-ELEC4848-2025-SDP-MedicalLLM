@@ -8,7 +8,6 @@ from typing import List
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from medical_llm_workflow.meta_config.meta_config import meta_settings
 from medical_llm_workflow.schemas.models import ConversationMessage
 from medical_llm_workflow.Infrastructure.LLM_client.models import GLMChatbotConfig
 
@@ -31,7 +30,7 @@ class GLMClient(BaseLLMClient):
         messages: List[ConversationMessage],
         chatbot_config: GLMChatbotConfig,
     ) -> str:
-        if meta_settings.debug:
+        if getenv("DEBUG", "False") == "True":
             return "This is a fake GLM response."
 
         return await asyncio.to_thread(self._call_chatbot_sync, messages, chatbot_config)

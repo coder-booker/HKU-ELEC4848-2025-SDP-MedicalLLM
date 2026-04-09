@@ -27,16 +27,18 @@ class EvaluatorAdaptor:
     @classmethod
     def build_expected_schema(cls, evaluator_type_list: List[EvaluatorType]) -> Dict[str, str]:
         """根据 evaluator 列表动态拼装结构化输出 schema。"""
-        schema: Dict[str, str] = {}
+        final_schema: Dict[str, str] = {}
 
         # 每个 evaluator 都能定义自己的结构化字段，最终合并为一个统一 schema。
         for evaluator_type in evaluator_type_list:
             schema = EvaluatorFactory.get_evaluator_llm_protocol(evaluator_type)
+            # print(f"Schema for evaluator {evaluator_type.value}:\n{schema}")
             for schema_key in schema:
-                if schema_key not in schema:
-                    schema.update(schema)
+                if schema_key not in final_schema:
+                    final_schema.update(schema)
+        # print(f"Current final schema after processing:\n{final_schema}")
 
-        return schema
+        return final_schema
     
     @classmethod
     def parse_dataset_question_to_evaluator_schema(
@@ -45,7 +47,7 @@ class EvaluatorAdaptor:
         dataset_json_question: BaseNormalizedQuestion,
         evaluator_type_list: List[EvaluatorType],
     ) -> Dict[str, str]:
-        """根据 dataset 类型和 evaluator 列表，将 dataset 中的金标答案适配为 evaluator 需要的格式。"""
+        """根据 dataset 类型和 evaluator 列表，获取 dataset 中的金标答案，并适配为 evaluator 需要的格式以方便 evaluator 进行评估。"""
         result_dict: Dict[str, str] = {} # 应该和 evaluation_schema 的 key 一一对应
         for evaluator_type in evaluator_type_list:
             dataset_key, evaluator_key = DATASET_EVALUATOR_SCHEMA_MAP[dataset_type][evaluator_type]
@@ -61,6 +63,7 @@ class EvaluatorAdaptor:
     ) -> Dict[str, str]:
         """
         将 llm 的输出文本按照 expected_schema 定义的字段进行提取和补齐。
+        llm 的最终输出文本在 smart extractor 任务下会是一个和 expected_schema 一样的 Json 字符串
         """
         response_dict: Dict[str, Any] = {}
 

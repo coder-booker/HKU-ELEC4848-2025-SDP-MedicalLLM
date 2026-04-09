@@ -17,7 +17,7 @@ class AccuracyEvaluator(BaseEvaluator):
     metric_name = "accuracy"
     # 指定 llm 用于评测的输出格式，方便后续自动评测脚本解析结果。这个格式需要能够被组合，所以 key 要比较 unique，避免和其他评测器的输出格式冲突。
     protocol: SimpleEvaluatorProtocol = {
-        "answer": "<The exact answer text>",
+        "answer": "<The exact option letter/index of the final answer, e.g. 'A' or '1'>",
     }
 
     # compare需要按照 dataset 是什么来对比吧

@@ -8,11 +8,15 @@
 from typing import List
 import fastapi_poe as fp
 from os import getenv
+import asyncio
 
 from medical_llm_workflow.schemas.models import ConversationMessage
-from medical_llm_workflow.meta_config.meta_config import meta_settings
 from ..base_client import BaseLLMClient
 from ..models import PoeChatbotConfig
+from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.utils import print_log
+import tiktoken
+
 
 
 class PoeClient(BaseLLMClient):
@@ -23,7 +27,8 @@ class PoeClient(BaseLLMClient):
     
     def __init__(self):
         key_name = f"{PoeClient.client_name.upper()}_KEY"
-        self.api_key = getenv(key_name)
+        self.api_key = Secrets.POE_KEY
+        print_log(f"Initialized PoeClient with API key from env var '{key_name}'", prefix="[LLM]")
 
     async def call_chatbot(
         self,
@@ -43,11 +48,16 @@ class PoeClient(BaseLLMClient):
         # 将内部消息对象转换为 Poe SDK 协议消息。
         fp_messages = []
         for msg in messages:
-            fp_messages.append(fp.ProtocolMessage(role=msg["role"].value, content=msg["content"]))
+            fp_messages.append(
+                fp.ProtocolMessage(
+                    role=msg["role"].value,
+                    content=msg["content"]
+                )
+            )
 
         # 调用 Poe API
         chunks = []
-        if meta_settings.debug:
+        if not Secrets.REAL_LLM_RESPONSE:
             # fake response for debug
             chunks.append("This")
             chunks.append(" is")
@@ -56,19 +66,44 @@ class PoeClient(BaseLLMClient):
             chunks.append(" response.")
             return "".join(chunks)
         
-        try:
-            # 逐块接收流式 token，并在最后拼接为完整文本。
-            async for part in fp.stream_request(
-                fp.QueryRequest(query=fp_messages),
-                bot_name=chatbot_config.model.value,
-                api_key=self.api_key,
-            ):
-                if part.text:
-                    chunks.append(part.text)
-        except Exception as e:
-            raise RuntimeError(f"Failed to call Poe API: {e}") from e
+        print_log("Calling Poe API...", prefix="[LLM]")
         
-        return "".join(chunks)
+        max_retries = 3
+        timeout_seconds = 30  # 设置一个宽容的单次调用超时阈值
+        
+        for attempt in range(max_retries):
+            chunks = []
+            try:
+                # 包装流式请求为单体协程，以适用 asyncio.wait_for 设置超时拦截网络挂起
+                async def _fetch_stream():
+                    async for part in fp.get_bot_response(
+                        messages=fp_messages,
+                        bot_name=chatbot_config["model"].value,
+                        api_key=self.api_key,
+                    ):
+                        if part.text:
+                            chunks.append(part.text)
+
+                await asyncio.wait_for(_fetch_stream(), timeout=timeout_seconds)
+                full_response = "".join(chunks)
+                break
+                
+            except asyncio.TimeoutError:
+                err_msg = f"Attempt {attempt + 1}/{max_retries} timed out after {timeout_seconds}s."
+                print_log(err_msg, prefix="[LLM]")
+            except Exception as e:
+                err_msg = f"Attempt {attempt + 1}/{max_retries} failed with error: {str(e)}"
+                print_log(err_msg, prefix="[LLM]")
+
+            # 若还未到最后一次尝试，则短暂停顿后重发请求
+            if attempt < max_retries - 1:
+                print_log("Retrying in 2 seconds...", prefix="[LLM]")
+                await asyncio.sleep(2)
+            else:
+                # 所有重试次数用尽，抛出异常阻断当前任务
+                raise RuntimeError(f"Failed to call Poe API after {max_retries} attempts.")
+        
+        return full_response
 
 
 def build_poe_client() -> PoeClient:

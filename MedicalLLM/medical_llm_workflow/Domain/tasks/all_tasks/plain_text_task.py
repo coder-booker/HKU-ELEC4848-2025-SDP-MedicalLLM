@@ -43,7 +43,7 @@ class PlainTextTask(BaseTask):
         if not prompt_text:
             # 返回 fail 状态的 record 以示警告，但不抛异常中断流程。
             msg: ConversationMessage = {
-                "role": ConversationMessageRole.BOT,
+                "role": ConversationMessageRole.USER,
                 "content": "Error: No prompt text provided for PlainTextTask.",
                 "status": ConversationMessageStatus.FAILED,
             }

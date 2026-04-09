@@ -21,6 +21,9 @@ from medical_llm_workflow.Domain.tasks.models import (
 from medical_llm_workflow.Domain.workflow_context.models import (
     WorkflowContextPort,
 )
+from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.utils import print_log
+
 
 
 class BaseTask:
@@ -41,19 +44,20 @@ class BaseTask:
             context_manager: 上下文管理器
         """
         self.config = config
-        self.prompt = self.build_prompt(
-            args_map=self.config.prompt_args_map,
-        )
+        self.prompt = self.build_prompt()
         
-    def build_prompt(self, args_map: Dict) -> str:
+    def build_prompt(self) -> str:
         """根据任务模板和参数构建 prompt 文本。"""
         # 允许任务配置中直接指定 prompt 模板，也允许使用默认模板。
         prompt = self.config.prompt_template.text if self.config.prompt_template else self.PROMPT_TEMPLATE
+        
+        # print(f"Building prompt for task:\n{prompt}")
+        # print(f"Prompt args map:\n{self.config.prompt_args_map}")
 
         # 通过占位符替换把运行时参数注入到 prompt 模板中。
-        for key, value in args_map.items():
+        for key, value in self.config.prompt_args_map.items():
             prompt = prompt.replace(f"{{{{{key}}}}}", str(value))
-        print(prompt)
+        # print(prompt)
 
         return prompt
     
@@ -113,14 +117,15 @@ class BaseTask:
             )
 
             res_message: ConversationMessage = {
-                "role": ConversationMessageRole.BOT,
+                "role": ConversationMessageRole.USER,
                 "content": response,
                 "status": ConversationMessageStatus.COMPLETED,
             }
+                
         except Exception as e:
             # 让上层处理异常
             res_message: ConversationMessage = {
-                "role": ConversationMessageRole.BOT,
+                "role": ConversationMessageRole.USER,
                 "content": f"Error: {str(e)}",
                 "status": ConversationMessageStatus.FAILED,
             }
