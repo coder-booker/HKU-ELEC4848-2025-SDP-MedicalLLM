@@ -11,7 +11,7 @@ class PromptType(str, Enum):
     COT = "chain_of_thought"
     SELF_REFINE = "self_refine"
 
-class PromptTemplate(BaseModel):    # TODO: 这个模板的model定义其实不太一致，这里的定义是类本身，而非 param，需要再调整
+class PromptTemplate(BaseModel):
     """提示词模板。"""
     # system: str
     # user: str

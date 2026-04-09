@@ -31,7 +31,6 @@ class RecipeFactory:
         if recipe_cls is None:
             raise ValueError(f"Unsupported recipe type: {recipe_type}")
         
-        # TODO 先 hard code 一个 chatbot_config，之后再改成动态传入
         recipe = recipe_cls(chatbot_config=chatbot_config) # 目前先直接实例化，之后如果需要的话再改成单例模式
 
         return recipe

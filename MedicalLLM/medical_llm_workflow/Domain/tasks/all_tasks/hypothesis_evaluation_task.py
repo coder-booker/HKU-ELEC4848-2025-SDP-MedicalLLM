@@ -27,7 +27,7 @@ class HypothesisEvaluationTask(BaseTask):
     
     def get_messages_for_llm_call(
         self,
-        workflow_context_port: WorkflowContextPort, # TODO：之后可能可以不通过 workflow_context 传入，而是 TaskConfig 包含或者使用类似单例的方法
+        workflow_context_port: WorkflowContextPort,
     ) -> List[ConversationMessage]:
         """拼接历史消息并附加本阶段提示词。"""
         messages: List[ConversationMessage] = []
