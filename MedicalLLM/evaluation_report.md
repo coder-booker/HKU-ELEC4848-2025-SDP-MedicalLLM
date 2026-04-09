@@ -1,12 +1,12 @@
 # Evaluation Report
 
 - Total Evaluators: 1
-- Total Samples: 4
+- Total Samples: 2
 
 ## Evaluator: accuracy
 
 - Metric: accuracy
-- Total Samples: 4
+- Total Samples: 2
 - Average Score: 0.0000
 - Min Score: 0.0000
 - Max Score: 0.0000
@@ -29,21 +29,11 @@ xychart-beta
 ### Details
 
 **Sample 1** (Score: 0.0)
-- **Question**: Question:  A 47-year-old African-American woman presents to her primary care physician for a general checkup appointment. She works as a middle school teacher and has a 25 pack-year smoking history. She has a body mass index (BMI) of 22 kg/m^2 and is a vegetarian. Her last menstrual period was 1 week ago. Her current medications include oral contraceptive pills. Which of the following is a risk factor for osteoporosis in this patient? A. Age B. Body mass index C. Estrogen therapy D. Race E. Smoking history 
-- **LLM Prediction**: {'success': False, 'answer': ''}
-- **Ground Truth**: {'answer': 'E'}
+- **Question**: Question:  A 30-year-old woman, gravida 1, para 0, at 30 weeks' gestation is brought to the emergency department because of progressive upper abdominal pain for the past hour. The patient vomited once on her way to the hospital. She said she initially had dull, generalized stomach pain about 6 hours prior, but now the pain is located in the upper abdomen and is more severe. There is no personal or family history of any serious illnesses. She is sexually active with her husband. She does not smoke or drink alcohol. Medications include folic acid and a multivitamin. Her temperature is 38.5°C (101.3°F), pulse is 100/min, and blood pressure is 130/80 mm Hg. Physical examination shows right upper quadrant tenderness. The remainder of the examination shows no abnormalities. Laboratory studies show a leukocyte count of 12,000/mm3. Urinalysis shows mild pyuria. Which of the following is the most appropriate definitive treatment in the management of this patient? A. Appendectomy B. Cefoxitin and azithromycin C. Biliary drainage D. Intramuscular ceftriaxone followed by cephalexin E. Laparoscopic removal of ovarian cysts 
+- **LLM Prediction**: {'answer': 'C', 'success': True}
+- **Ground Truth**: {'answer': 'A'}
 
 **Sample 2** (Score: 0.0)
-- **Question**: Question:  A previously healthy 25-year-old man is brought to the emergency department 30 minutes after collapsing during soccer practice. His father died of sudden cardiac arrest at the age of 36 years. The patient appears well. His pulse is 73/min and blood pressure is 125/78 mm Hg. Cardiac examination is shown. An ECG shows large R waves in the lateral leads and deep S waves in V1 and V2. Further evaluation is most likely to show which of the following? A. Monoclonal light chain deposition in the myocardium B. Aortic root dilatation C. Eccentric left ventricular dilation D. Asymmetric septal hypertrophy E. Mitral valve fibrinoid necrosis 
-- **LLM Prediction**: {'success': False, 'answer': ''}
-- **Ground Truth**: {'answer': 'D'}
-
-**Sample 3** (Score: 0.0)
-- **Question**: Question:  A 25-day-old newborn is brought to the pediatrician for lethargy, poor muscle tone, and feeding difficulty with occasional regurgitation that recently turned into projectile vomiting. The child was born via vaginal delivery without complications. On examination, the vital signs include: pulse 130/min, respiratory rate 30/min, blood pressure 96/60 mm Hg, and temperature 36.5°C (97.7°F). The physical examination shows a broad nasal bridge, oral thrush, hepatosplenomegaly, and generalized hypotonia. Further tests of blood and urine samples help the pediatrician to diagnose the child with an enzyme deficiency. More extensive laboratory testing reveals normal levels of citrulline and hypoglycemia. There are also elevated levels of ketone bodies, glycine, and methylmalonic acid. Which of the following is the product of the reaction catalyzed by the deficient enzyme in this patient? A. Pyruvate B. Succinyl-CoA C. Methylmalonyl-CoA D. Acetyl-CoA E. Enoyl-CoA 
-- **LLM Prediction**: {'success': False, 'answer': ''}
+- **Question**: Question:  A 34-year-old man comes to the physician for a follow-up examination. He has a 3-month history of a nonproductive cough. He has been treated with diphenhydramine since his last visit 2 weeks ago, but his symptoms have persisted. He does not smoke. He drinks 3 beers on the weekends. He is 177 cm (5 ft 10 in) tall and weighs 100 kg (220.46 lbs); BMI is 35.1 kg/m2. His temperature is 37.1°C (98.8°F), pulse is 78/min, respirations are 14/min, and blood pressure is 130/80 mm Hg. Pulse oximetry on room air shows an oxygen saturation of 97%. Physical examination and an x-ray of the chest show no abnormalities. Which of the following is the most appropriate next step in management? A. Azithromycin therapy B. Pulmonary function testing C. Omeprazole therapy D. Oral corticosteroid therapy E. CT scan of the chest 
+- **LLM Prediction**: {'answer': 'C', 'success': True}
 - **Ground Truth**: {'answer': 'B'}
-
-**Sample 4** (Score: 0.0)
-- **Question**: Question:  A 19-year-old man is brought to the emergency department by the resident assistant of his dormitory for strange behavior. He was found locked out of his room, where the patient admitted to attending a fraternity party before becoming paranoid that the resident assistant would report him to the police. The patient appears anxious. His pulse is 105/min, and blood pressure is 142/85 mm Hg. Examination shows dry mucous membranes and bilateral conjunctival injection. Further evaluation is most likely to show which of the following? A. Tactile hallucinations B. Pupillary constriction C. Synesthesia D. Sense of closeness to others E. Impaired reaction time 
-- **LLM Prediction**: {'success': False, 'answer': ''}
-- **Ground Truth**: {'answer': 'E'}

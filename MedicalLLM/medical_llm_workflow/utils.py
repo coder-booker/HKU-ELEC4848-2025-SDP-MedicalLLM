@@ -1,8 +1,14 @@
+import asyncio
+from contextvars import ContextVar
 from typing import Any
+
 from medical_llm_workflow.serect import Secrets
 
 
 _IS_LOG_INITIALIZED = False
+
+# 全局上下文变量：承载针对单一工作流运行生命周期的 SSE 队列
+sse_queue_var: ContextVar[asyncio.Queue | None] = ContextVar("sse_queue", default=None)
 
 
 def print_log(message: Any, prefix: str = "", debug_only: bool = False) -> None:
@@ -40,6 +46,14 @@ def print_log(message: Any, prefix: str = "", debug_only: bool = False) -> None:
         msg_str = "\n".join(f"{prefix} {line}" if line.strip() else line for line in lines)
         
     print(msg_str)
+    
+    # 如果协程上下文内有被激活的队列，无阻塞地将排版后的字元塞入队列发给前端 SSE
+    try:
+        queue = sse_queue_var.get()
+        if queue is not None:
+            queue.put_nowait(msg_str)
+    except (LookupError, asyncio.QueueFull):
+        pass
     
     # 获取写入模式，只在当次程序运行的第一次写入采用覆写 (w)，后续追加 (a)
     mode = "a" if _IS_LOG_INITIALIZED else "w"

@@ -20,7 +20,7 @@ from medical_llm_workflow.utils import print_log
 # 全局默认配置：作为以后后端服务的默认回退参数，各函数直接在此取值
 DEFAULT_DATASET_CONFIG = {
     "dataset_type": DatasetType.MED_QA,
-    "num_of_questions": 4,
+    "num_of_questions": 1,
 }
 
 # 全局默认配置：评测器类型列表
