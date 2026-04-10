@@ -25,24 +25,25 @@ class MedicalReasoning3StepsRecipe(Recipe):
         
         return [
             TaskConfig(
-                # id="Problem Representation 1",
+                id="Problem Representation Task",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.PROBLEM_REPRESENTATION,
                 chatbot_config=self.chatbot_config,
-                # connect_to=["Hypothesis Generation 1"],
-                # prompt_args_map={"question": "{{QUESTION}}"},
+                input_msg_sources=[],
             ),
             TaskConfig(
-                # id="Hypothesis Generation 1",
+                id="Hypothesis Generation Task",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.HYPOTHESIS_GENERATION,
                 chatbot_config=self.chatbot_config,
+                input_msg_sources=[],
             ),
             TaskConfig(
-                # id="Hypothesis Evaluation 1",
+                id="Hypothesis Evaluation Task",
                 type=TaskType.SINGLE_AGENT,
                 medical_type=MedicalType.HYPOTHESIS_EVALUATION,
                 chatbot_config=self.chatbot_config,
+                input_msg_sources=[],
             ),
         ]
 

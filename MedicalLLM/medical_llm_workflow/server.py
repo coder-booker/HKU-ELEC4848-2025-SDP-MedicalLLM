@@ -35,7 +35,9 @@ class RunConfigPayload(BaseModel):
     model: str = PoeChatbotModel.GPT_5_4_NANO.value
     temperature: float = 0.7
     max_tokens: int = 2048
-    recipe_type: str = RecipeType.MEDICAL_REASONING_3_STEPS.value
+    recipe_type: Optional[str] = None
+    custom_tasks: Optional[List[dict]] = None
+
 
 
 @app.get("/api/options")
@@ -51,7 +53,7 @@ async def get_workflow_options():
 
 
 @app.post("/api/run")
-async def run_medical_workflow(config: RunConfigPayload):
+async def run_workflow(config: RunConfigPayload):
     """
     单点傻瓜式调用接口：执行由前端传入的配置参数的 workflow。
     通过 Server-Sent Events (SSE) 向前端实时反馈控制台所生成的日志，
@@ -78,14 +80,24 @@ async def run_medical_workflow(config: RunConfigPayload):
                 "temperature": config.temperature,
                 "max_tokens": config.max_tokens,
             }
-            recipe_type = RecipeType(config.recipe_type)
             
-            # 执行既有的完整流程链条
+            # 支持通过 recipe 或者 custom_tasks 来执行工作流
+            recipe_type = None
+            if config.recipe_type:
+                recipe_type = RecipeType(config.recipe_type)
+                
+            custom_task_config_list = None
+            if config.custom_tasks:
+                from medical_llm_workflow.Domain.tasks import TaskConfig
+                custom_task_config_list = [TaskConfig.model_validate(task_dict) for task_dict in config.custom_tasks]
+            
+            # 执行工作流
             await run_workflow(
                 dataset_kwargs=dataset_kwargs,
                 evaluator_type_list=evaluator_types,
                 chatbot_config=chatbot_config,
-                recipe_type=recipe_type
+                recipe_type=recipe_type,
+                custom_task_config_list=custom_task_config_list
             )
             
             # Workflow 执行完后，统一组装返回
@@ -152,3 +164,4 @@ async def run_medical_workflow(config: RunConfigPayload):
 
 if __name__ == "__main__":
     uvicorn.run("medical_llm_workflow.server:app", host="0.0.0.0", port=8000, reload=True)
+

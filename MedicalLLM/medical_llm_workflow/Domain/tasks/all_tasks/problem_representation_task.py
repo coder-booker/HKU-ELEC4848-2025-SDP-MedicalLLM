@@ -19,7 +19,7 @@ class ProblemRepresentationTask(BaseTask):
     """问题表示任务，将输入的问题进行适当的格式化和表示。"""
 
     PROMPT_TEMPLATE = (
-        "You are the “Clue Representation” agent in a clinical reasoning workflow."
-        "Your job is not to answer the question directly, but to convert the input patient case (in form of medical question) into a structured clinical clue representation for downstream agents."
-        "You can find the input patient case in previous messages."
+        "You are the “Clue Representation” agent in a clinical reasoning workflow.\n"
+        "Your job is not to answer the question directly, but to convert the input patient case (in form of medical question) into a structured clinical clue representation for downstream agents.\n\n"
+        "Patient Case:\n{{question_task}}\n"
     )

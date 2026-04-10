@@ -5,14 +5,12 @@
 """
 
 from typing import List
+import json
+import re
 
 from medical_llm_workflow.Domain.tasks.base_task import BaseTask
-from medical_llm_workflow.schemas import (
-    ConversationMessage,
-)
-from medical_llm_workflow.Domain.workflow_context import (
-    WorkflowContextPort,
-)
+from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor import EvaluatorAdaptor
+from medical_llm_workflow.Domain.tasks import SmartExtractorTaskConfig
 
 
 class SmartExtractorTask(BaseTask):
@@ -24,34 +22,27 @@ class SmartExtractorTask(BaseTask):
         "Expected JSON schema:\n"
         "{{SCHEMA}}\n"
     )
-    def get_messages_for_llm_call(self, workflow_context_port: WorkflowContextPort) -> List[ConversationMessage]:
-        messages: List[ConversationMessage] = super().get_messages_for_llm_call(workflow_context_port)
+
+    def build_prompt(self, *args, **kwargs) -> str:
+        """根据 evaluator 列表动态构建结构化抽取 prompt。"""
+        config: SmartExtractorTaskConfig = self.config
+        expected_schema = EvaluatorAdaptor.build_expected_schema(
+            config.evaluator_type_list,
+        )
+        schema_text = json.dumps(
+            expected_schema,
+            ensure_ascii=False,
+            indent=2,
+        )
         
-        all_records = workflow_context_port.get_all_records()
-        question = all_records[0]["task_context"]["output"][0]
-        messages.insert(0, question)
-        
-        return messages
-    
+        prompt = self.config.prompt_template.text if self.config.prompt_template else self.PROMPT_TEMPLATE
+        tags = set(re.findall(r"\{\{([^}]+)\}\}", prompt))
+        for tag in tags:
+            if tag == "SCHEMA":
+                prompt = prompt.replace(f"{{{{{tag}}}}}", schema_text)
+                break
 
-    # def build_prompt(self, args_map: Dict) -> str:
-    #     """根据 evaluator 列表动态构建结构化抽取 prompt。"""
-    #     config: SmartExtractorTaskConfig = self.config
-    #     expected_schema = EvaluatorAdaptor.build_expected_schema(
-    #         config.evaluator_type_list,
-    #     )
-
-    #     schema_text = json.dumps(
-    #         expected_schema,
-    #         ensure_ascii=False,
-    #         indent=2,
-    #     )
-
-    #     return super().build_prompt(
-    #         args_map={
-    #             "SCHEMA": schema_text,
-    #         },
-    #     )
+        return prompt
 
     # async def execute(
     #     self,

@@ -66,9 +66,10 @@ class TaskConfig(BaseModel):
     - prompt_template: Optional[PromptTemplate] - 任务专用的 prompt 模板
     - prompt_args_map: Dict[str, Any] - 用于动态生成 prompt 的参数映射
     - connect_to: List[str] - 该任务的输出将传递给哪些下游任务
+    - input_msg_sources: List[str] - 提供输入的上游 task_id 列表，prompt 中直接使用 {{task_id}} 作为 placeholder
     """
 
-    id: uuid.UUID = Field(default_factory=uuid.uuid4)  # TODO：临时允许 str ，方便 demo 时手动指定 id
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))  # 支持 UUID 和用户自定义字符串
     type: TaskType
     medical_type: MedicalType = MedicalType.DEFAULT
     # context: TaskContext # TODO: 用户可以设定上下文
@@ -78,8 +79,8 @@ class TaskConfig(BaseModel):
     max_retries: int = 3
     timeout: int = 60
 
-    # 用于动态生成 prompt 的参数映射。
-    prompt_args_map: Dict[str, Any] = Field(default_factory=dict)
+    # 提供输入的上游 task_id 列表，prompt 中直接使用 {{task_id}} 作为 placeholder
+    input_msg_sources: List[str] = Field(default_factory=list)
 
     # 对于 PlainTextTask 或需要显式文本模板的任务，可直接使用该字段。
     prompt_template: PromptTemplate | None = None
@@ -90,13 +91,13 @@ class TaskConfig(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         """把 TaskConfig 转换为普通字典，方便打印输出。"""
         return {
-            "id": str(self.id),
+            "id": self.id,
             "type": self.type.value,
             "medical_type": self.medical_type.value,
             "chatbot_config": json.dumps(self.chatbot_config, ensure_ascii=False, indent=2) if self.chatbot_config else "",
             "max_retries": self.max_retries,
             "timeout": self.timeout,
-            "prompt_args_map": json.dumps(self.prompt_args_map, ensure_ascii=False, indent=2),
+            "input_msg_sources": self.input_msg_sources,
             "prompt_template": self.prompt_template.model_dump() if self.prompt_template else "",
             "connect_to": self.connect_to,
         }
@@ -110,7 +111,6 @@ class PlainTextTaskConfig(TaskConfig):
     - chatbot_config: Optional[BaseChatbotConfig] - 任务专用的聊天机器人配置
     - max_retries: int - 任务最大重试次数
     - timeout: int - 任务超时时间（秒）
-    - prompt_args_map: Dict[str, Any] - 用于动态生成 prompt 的参数映射
     - prompt_template: PromptTemplate - 任务专用的 prompt 模板
     - connect_to: List[str] - 该任务的输出将传递给哪些下游任务
     """
@@ -129,7 +129,6 @@ class EvaluationTaskConfig(TaskConfig):
     - chatbot_config: Optional[BaseChatbotConfig] - 任务专用的聊天机器人配置
     - max_retries: int - 任务最大重试次数
     - timeout: int - 任务超时时间（秒）
-    - prompt_args_map: Dict[str, Any] - 用于动态生成 prompt 的参数映射
     - prompt_template: PromptTemplate - 任务专用的 prompt 模板
     - connect_to: List[str] - 该任务的输出将传递给哪些下游任务
     """
@@ -153,7 +152,6 @@ class SmartExtractorTaskConfig(TaskConfig):
     - max_retries: int - 任务最大重试次数
     - timeout: int - 任务超时时间（秒）
     - prompt_template: Optional[PromptTemplate] - 任务专用的 prompt 模板
-    - prompt_args_map: Dict[str, Any] - 用于动态生成 prompt 的参数映射
     - connect_to: List[str] - 该任务的输出将传递给哪些下游任务
     """
 
@@ -161,6 +159,7 @@ class SmartExtractorTaskConfig(TaskConfig):
 
     # 用 evaluator 列表动态决定抽取 schema，避免硬编码固定字段。
     evaluator_type_list: List[EvaluatorType]
+    
 
 
 class TaskRecord(TypedDict):

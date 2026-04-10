@@ -17,5 +17,9 @@ from medical_llm_workflow.Domain.workflow_context.models import (
 class HypothesisGenerationTask(BaseTask):
     """假设生成任务，基于问题表示结果生成诊断假设。"""
 
-    PROMPT_TEMPLATE = '''You are the “Hypothesis Generation” agent in a clinical reasoning workflow. Based on the previous Problem Representation result, you must propose 3–6 plausible diagnostic/mechanistic hypotheses and provide key supporting and contradicting evidence for each, producing a candidate list for downstream evaluation.
-You can find the input patient case and Problem Representation result in previous messages'''
+    PROMPT_TEMPLATE = (
+        "You are the “Hypothesis Generation” agent in a clinical reasoning workflow.\n"
+        "Based on the previous Problem Representation result, you must propose 3–5 plausible diagnostic/mechanistic hypotheses and provide key supporting and contradicting evidence for each, producing a candidate list for downstream evaluation.\n\n"
+        "Problem Representation:\n"
+        "{{Problem Representation Task}}\n"
+    )

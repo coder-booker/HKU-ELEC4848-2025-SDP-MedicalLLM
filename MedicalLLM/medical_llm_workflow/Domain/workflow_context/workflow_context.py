@@ -74,7 +74,7 @@ class WorkflowContext:
 
     def get_task_record(self, task_id: str) -> TaskRecord:
         """按任务 id 获取单条记录。"""
-        return self.conversation_history.get(task_id)
+        return self.conversation_history.get(task_id).value
     
     def get_all_records(self) -> List[TaskRecord]:
         """按执行顺序返回所有任务记录。"""

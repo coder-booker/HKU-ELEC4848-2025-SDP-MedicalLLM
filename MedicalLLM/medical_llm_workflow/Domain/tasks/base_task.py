@@ -6,6 +6,7 @@
 3) 组装 TaskRecord 并写回工作流上下文。
 """
 from typing import List, Dict
+import re
 
 from medical_llm_workflow.Infrastructure import BaseLLMClient, ClientFactory
 from medical_llm_workflow.schemas.models import (
@@ -21,9 +22,6 @@ from medical_llm_workflow.Domain.tasks.models import (
 from medical_llm_workflow.Domain.workflow_context.models import (
     WorkflowContextPort,
 )
-from medical_llm_workflow.serect import Secrets
-from medical_llm_workflow.utils import print_log
-
 
 
 class BaseTask:
@@ -40,44 +38,49 @@ class BaseTask:
 
         Args:
             config: 任务配置
-            poe_client: LLM API 客户端
-            context_manager: 上下文管理器
         """
         self.config = config
-        self.prompt = self.build_prompt()
         
-    def build_prompt(self) -> str:
-        """根据任务模板和参数构建 prompt 文本。"""
-        # 允许任务配置中直接指定 prompt 模板，也允许使用默认模板。
-        prompt = self.config.prompt_template.text if self.config.prompt_template else self.PROMPT_TEMPLATE
-        
-        # print(f"Building prompt for task:\n{prompt}")
-        # print(f"Prompt args map:\n{self.config.prompt_args_map}")
+    def build_prompt(self, workflow_context_port: WorkflowContextPort) -> str:
+        """根据任务模板和运行时上下文获取 prompt 文本。
 
-        # 通过占位符替换把运行时参数注入到 prompt 模板中。
-        for key, value in self.config.prompt_args_map.items():
-            prompt = prompt.replace(f"{{{{{key}}}}}", str(value))
-        # print(prompt)
+        自动提取 {{tag}}（即 task_id）并从 workflow context 获取内容进行替换。
+        """
+        
+        # 获取模板文本
+        prompt = self.config.prompt_template.text if self.config.prompt_template else self.PROMPT_TEMPLATE
+
+        # 匹配形如 {{task_id}} 的所有 tag（忽略包含额外大括号的情况）
+        tags = set(re.findall(r"\{\{([^}]+)\}\}", prompt))
+        for tag in tags:
+            record = workflow_context_port.get_task_record(tag)
+            if record and record["task_context"]["output"]:
+                # 获取该任务最后一条回答的内容
+                output_content = str(record["task_context"]["output"][-1]["content"])
+                prompt = prompt.replace(f"{{{{{tag}}}}}", output_content)
 
         return prompt
     
     def get_messages_for_llm_call(
         self,
-        workflow_context_port: WorkflowContextPort, # TODO：之后可能可以不通过 workflow_context 传入，而是 TaskConfig 包含或者使用类似单例的方法
+        workflow_context_port: WorkflowContextPort, 
     ) -> List[ConversationMessage]:
         """收集当前任务所需输入消息。
 
-        基础策略是把上次任务输出当成本任务输入。
+        通过 input_msg_sources 将其指定的上游任务记录直接提取，并按顺序附在最终提示词前。
+        注意：这与 Prompt 注入是相互独立的过程。
         """
         messages: List[ConversationMessage] = []
         
-        # 获取上下文：默认把上一个任务的输出作为本次任务的输入。
-        prev_task_record = workflow_context_port.get_last_task_record() # TODO：先假设所有消息都是单线性且不重复的
-        prev_task_output = prev_task_record["task_context"]["output"] if prev_task_record else []
-        messages.extend(prev_task_output)
+        # 1. 遍历 input_msg_sources，将这些 task 的输出消息直接加入列表
+        for source_task_id in self.config.input_msg_sources:
+            record = workflow_context_port.get_task_record(source_task_id)
+            if record and record["task_context"]["output"]:
+                # 将该 task 所有的输出作为上文信息插入
+                messages.extend(record["task_context"]["output"])
         
-        # 获取提示词
-        task_prompt = self.prompt
+        # 2. 构建最后一条带有已替换好上下文字段的提示词
+        task_prompt = self.build_prompt(workflow_context_port)
         new_message: ConversationMessage = {
             "role": ConversationMessageRole.USER,
             "content": task_prompt,

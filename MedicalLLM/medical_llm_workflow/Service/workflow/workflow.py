@@ -20,6 +20,7 @@ from medical_llm_workflow.Domain.tasks import (
     SmartExtractorTaskConfig,
     TaskConfig,
 )
+from medical_llm_workflow.Domain.tasks.all_tasks.smart_extractor_task import SmartExtractorTask
 from medical_llm_workflow.Domain.prompts import PromptTemplate
 from medical_llm_workflow.Domain.tasks import TaskFactory
 from medical_llm_workflow.Domain.workflow_context import WorkflowContext
@@ -134,19 +135,11 @@ class Workflow:
                 extractor_chatbot_config = task_config.chatbot_config
                 break
 
-        expected_schema = EvaluatorAdaptor.build_expected_schema(
-            self.evaluator_type_list,
-        )
-        # print(f"Expected schema for SmartExtractor:\n{expected_schema}")
-        schema_text = json.dumps(
-            expected_schema,
-            ensure_ascii=False,
-            indent=2,
-        )
         extractor_task_config = SmartExtractorTaskConfig(
+            id="smart_extractor",
             chatbot_config=extractor_chatbot_config,
             evaluator_type_list=self.evaluator_type_list.copy(),
-            prompt_args_map={ "SCHEMA": schema_text },
+            input_msg_sources=['question_task'],
         )
 
         return extractor_task_config
@@ -218,8 +211,92 @@ class Workflow:
         
         return evaluation_result_list
 
-       
-    
+
+    async def fire_tasks_execution(
+        self,
+        inlet_tasks: List[TaskConfig] = [],
+        outlet_tasks: List[TaskConfig] = [],
+    ) -> WorkflowContext:
+        """
+        执行单道题工作流并返回对应上下文。
+
+        Args:
+            inlet_tasks: 题目注入任务配置列表，会被顺序接在工作流头
+            outlet_tasks: 题目输出任务配置列表，会被顺序接在工作流尾中
+
+        Returns:
+            工作流上下文，包含本次 fire_tasks_execution 的全部对话记录和结果。
+        """
+        workflow_context = WorkflowContext(
+            workflow_id=self.id,
+        )
+
+        # core task 只保留用户配置，不在成员变量上原地 insert，避免多轮 fire_tasks_execution 污染配置。
+        core_task_config_list = list(self.task_config_list)
+
+        # 执行链：题目注入 -> 核心推理任务 -> 智能数据提取器。
+        execution_task_config_list: List[TaskConfig] = []
+        execution_task_config_list.extend(inlet_tasks)
+        execution_task_config_list.extend(core_task_config_list)
+        execution_task_config_list.extend(outlet_tasks)
+
+        # 根据每个任务配置创建并执行任务，任务内部会把结果写回 workflow_context。
+        for task_config in execution_task_config_list:
+            task = TaskFactory.create(task_config)
+            task_record = await task.execute(workflow_context)
+
+            for task_output_msg in task_record["task_context"]["output"]:
+                # 一旦任何任务输出标记为 FAILED，直接中止整个流程。
+                if task_output_msg["status"] == ConversationMessageStatus.FAILED:
+                    raise Exception(
+                        f"Task {task.config.id} failed with error: {task_output_msg['content']}",
+                    )
+
+        return workflow_context
+
+    async def run(self) -> List[WorkflowContext]:
+        """初始化 dataset 与 evaluator，执行全量工作流并返回全部上下文。"""
+        all_workflow_contexts: List[WorkflowContext] = []
+
+        # ---- dataset ----
+        # question_item_list 和 all_workflow_contexts 使用相同索引对齐。
+        print_log("Initializing dataset inlet...", prefix="[WORKFLOW]")
+        dataset_inlet_item_list = self.init_dataset_inlet()
+        inlet_tasks: List[TaskConfig] = []
+        for dataset_inlet_item in dataset_inlet_item_list:
+            inlet_task = PlainTextTaskConfig(
+                id="question_task",
+                prompt_template=PromptTemplate(
+                    text=dataset_inlet_item.text_question,
+                ),
+            )
+            inlet_tasks.append(inlet_task)
+
+        smart_extractor_task_config = self.init_extractor()
+
+        # 逐题执行 fire，收集每题上下文。
+        print_log("Executing workflows for each question...", prefix="[WORKFLOW]")
+        for i in range(len(dataset_inlet_item_list)):
+            workflow_context = await self.fire_tasks_execution(
+                inlet_tasks=[inlet_tasks[i]],
+                outlet_tasks=[smart_extractor_task_config],
+            )
+            all_workflow_contexts.append(workflow_context)
+
+        print_log("All workflows executed. Starting evaluation...", prefix="[WORKFLOW]")
+        evaluation_result_list = self.evaluate(
+            all_workflow_contexts=all_workflow_contexts,
+            dataset_inlet_item_list=dataset_inlet_item_list,
+        )
+        
+        report_info = self.build_report(
+            evaluation_result_list=evaluation_result_list,
+            dataset_inlet_item_list=dataset_inlet_item_list,
+        )
+        print_log(f"Final evaluation report generated: {report_info['report_path']}", prefix="[WORKFLOW]")
+
+        return all_workflow_contexts
+
     def build_report(
         self,
         evaluation_result_list: List[EvaluationResultItemForReport],
@@ -291,87 +368,3 @@ class Workflow:
             "report_path": merged_report_path,
             "results": evaluation_result_list,
         }
-
-    async def fire_tasks_execution(
-        self,
-        inlet_tasks: List[TaskConfig] = [],
-        outlet_tasks: List[TaskConfig] = [],
-    ) -> WorkflowContext:
-        """
-        执行单道题工作流并返回对应上下文。
-
-        Args:
-            inlet_tasks: 题目注入任务配置列表，会被顺序接在工作流头
-            outlet_tasks: 题目输出任务配置列表，会被顺序接在工作流尾中
-
-        Returns:
-            工作流上下文，包含本次 fire_tasks_execution 的全部对话记录和结果。
-        """
-        workflow_context = WorkflowContext(
-            workflow_id=self.id,
-        )
-
-        # core task 只保留用户配置，不在成员变量上原地 insert，避免多轮 fire_tasks_execution 污染配置。
-        core_task_config_list = list(self.task_config_list)
-
-        # 执行链：题目注入 -> 核心推理任务 -> 智能数据提取器。
-        execution_task_config_list: List[TaskConfig] = []
-        execution_task_config_list.extend(inlet_tasks)
-        execution_task_config_list.extend(core_task_config_list)
-        execution_task_config_list.extend(outlet_tasks)
-
-        # 根据每个任务配置创建并执行任务，任务内部会把结果写回 workflow_context。
-        for task_config in execution_task_config_list:
-            task = TaskFactory.create(task_config)
-            task_record = await task.execute(workflow_context)
-
-            for task_output_msg in task_record["task_context"]["output"]:
-                # 一旦任何任务输出标记为 FAILED，直接中止整个流程。
-                if task_output_msg["status"] == ConversationMessageStatus.FAILED:
-                    raise Exception(
-                        f"Task {task.config.id} failed with error: {task_output_msg['content']}",
-                    )
-
-        return workflow_context
-
-    async def run(self) -> List[WorkflowContext]:
-        """初始化 dataset 与 evaluator，执行全量工作流并返回全部上下文。"""
-        all_workflow_contexts: List[WorkflowContext] = []
-
-        # ---- dataset ----
-        # question_item_list 和 all_workflow_contexts 使用相同索引对齐。
-        print_log("Initializing dataset inlet...", prefix="[WORKFLOW]")
-        dataset_inlet_item_list = self.init_dataset_inlet()
-        inlet_tasks: List[TaskConfig] = []
-        for dataset_inlet_item in dataset_inlet_item_list:
-            inlet_task = PlainTextTaskConfig(
-                prompt_template=PromptTemplate(
-                    text=dataset_inlet_item.text_question,
-                ),
-            )
-            inlet_tasks.append(inlet_task)
-
-        smart_extractor_task_config = self.init_extractor()
-
-        # 逐题执行 fire，收集每题上下文。
-        print_log("Executing workflows for each question...", prefix="[WORKFLOW]")
-        for i in range(len(dataset_inlet_item_list)):
-            workflow_context = await self.fire_tasks_execution(
-                inlet_tasks=[inlet_tasks[i]],
-                outlet_tasks=[smart_extractor_task_config],
-            )
-            all_workflow_contexts.append(workflow_context)
-
-        print_log("All workflows executed. Starting evaluation...", prefix="[WORKFLOW]")
-        evaluation_result_list = self.evaluate(
-            all_workflow_contexts=all_workflow_contexts,
-            dataset_inlet_item_list=dataset_inlet_item_list,
-        )
-        
-        report_info = self.build_report(
-            evaluation_result_list=evaluation_result_list,
-            dataset_inlet_item_list=dataset_inlet_item_list,
-        )
-        print_log(f"Final evaluation report generated: {report_info['report_path']}", prefix="[WORKFLOW]")
-
-        return all_workflow_contexts
