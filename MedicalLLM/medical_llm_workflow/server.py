@@ -8,13 +8,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
-from medical_llm_workflow.main import run_workflow, DEFAULT_DATASET_CONFIG, DEFAULT_EVALUATOR_TYPE_LIST, DEFAULT_CHATBOT_CONFIG, DEFAULT_RECIPE_TYPE
-from medical_llm_workflow.utils import sse_queue_var
+from medical_llm_workflow.main import run_core_workflow, DEFAULT_CHATBOT_CONFIG
+from medical_llm_workflow.utils import sse_queue_var, run_dir_var
 
-from medical_llm_workflow.Domain.benchmark.Dataset.models import DatasetType
+from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetConfig
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
+from medical_llm_workflow.Domain.tasks import TaskConfig
 from medical_llm_workflow.Infrastructure.LLM_client.models import ChatbotType, PoeChatbotModel
 from medical_llm_workflow.Domain.recipes.models import RecipeType
+from medical_llm_workflow.Domain.recipes.recipe_factory import RecipeFactory
+from medical_llm_workflow.serect import Secrets
+import datetime
+            
 
 app = FastAPI(title="Medical LLM Workflow Backend Service")
 
@@ -27,28 +32,66 @@ app.add_middleware(
 )
 
 
-class RunConfigPayload(BaseModel):
+class DatasetConfigPayload(BaseModel):
+    """
+    单个数据集与问题数量配置。
+    - dataset_type: str, 数据集类型
+    - num_of_questions: int, 该数据集抽样问题数量
+    """
+
     dataset_type: str = DatasetType.MED_QA.value
     num_of_questions: int = 4
+
+
+class RunConfigPayload(BaseModel):
+    """
+    工作流运行请求参数配置。
+    - datasets: List[DatasetConfigPayload], 数据集与题目数配置列表
+    - evaluator_types: List[str], 评测器类型列表
+    - chatbot_type: str, 聊天机器人类型
+    - model: str, 模型类型
+    - temperature: float, 生成温度
+    - max_tokens: int, 最大输出 Token 数
+    - tasks: List[dict], 实际执行的任务配置列表
+    """
+
+    datasets: List[DatasetConfigPayload] = [DatasetConfigPayload()]
     evaluator_types: List[str] = [EvaluatorType.ACCURACY.value]
     chatbot_type: str = ChatbotType.POE.value
     model: str = PoeChatbotModel.GPT_5_4_NANO.value
     temperature: float = 0.7
     max_tokens: int = 2048
-    recipe_type: Optional[str] = None
-    custom_tasks: Optional[List[dict]] = None
+    tasks: List[dict] = []
 
 
 
 @app.get("/api/options")
 async def get_workflow_options():
-    """提供给前端所有可用的工作流配置选项"""
+    """提供给前端所有可用的工作流配置选项，包含解析完成的 Recipe"""
+    
+    # 构建基础默认的 LLM 配置，用于实例化默认 Recipe 任务
+    recipes_list = []
+    for r_type in RecipeType:
+        # 获取预设 Recipe 并解析为 task list
+        recipe = RecipeFactory.get_recipe(
+            recipe_type=r_type,
+            chatbot_config=DEFAULT_CHATBOT_CONFIG,
+        )
+        task_configs = recipe.build_task_configs()
+        
+        recipes_list.append({
+            "label": r_type.name,
+            "value": r_type.value,
+            # 将任务配置全量暴露给前端，允许前端自由查看与修改
+            "tasks": [t.model_dump(exclude_none=True) for t in task_configs],
+        })
+
     return {
         "datasets": [{"label": e.name, "value": e.value} for e in DatasetType],
         "evaluators": [{"label": e.name, "value": e.value} for e in EvaluatorType],
         "chatbotTypes": [{"label": e.name, "value": e.value} for e in ChatbotType],
         "models": [{"label": e.name, "value": e.value} for e in PoeChatbotModel if e != PoeChatbotModel.EMPTY_MODEL],
-        "recipes": [{"label": e.name, "value": e.value} for e in RecipeType],
+        "recipes": recipes_list,
     }
 
 
@@ -63,46 +106,44 @@ async def run_workflow(config: RunConfigPayload):
     # 建立一条协程间通信的消息队列
     queue = asyncio.Queue()
 
+    # 为每次执行生成独立的结果目录
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join(Secrets.RESULT_DIR, ts)
+
     async def workflow_runner():
         """执行流的具体后台任务。"""
         # 将这个队列绑定进当前新起的 Task 子上下文中。整个堆栈往下共享此状态。
         token = sse_queue_var.set(queue)
+        dir_token = run_dir_var.set(run_dir)
         try:
-            # 组装传入的配置
-            dataset_kwargs = {
-                "dataset_type": DatasetType(config.dataset_type),
-                "num_of_questions": config.num_of_questions,
-            }
-            evaluator_types = [EvaluatorType(e) for e in config.evaluator_types]
-            chatbot_config = {
-                "chatbot_type": ChatbotType(config.chatbot_type),
-                "model": PoeChatbotModel(config.model),
-                "temperature": config.temperature,
-                "max_tokens": config.max_tokens,
-            }
+            # 组装传入的评测集配置
+            dataset_config_list = [
+                DatasetConfig(
+                    dataset_type=DatasetType(d.dataset_type),
+                    num_of_questions=d.num_of_questions,
+                )
+                for d in config.datasets
+            ]
+            evaluator_type_list = [EvaluatorType(e) for e in config.evaluator_types]
             
-            # 支持通过 recipe 或者 custom_tasks 来执行工作流
-            recipe_type = None
-            if config.recipe_type:
-                recipe_type = RecipeType(config.recipe_type)
-                
-            custom_task_config_list = None
-            if config.custom_tasks:
-                from medical_llm_workflow.Domain.tasks import TaskConfig
-                custom_task_config_list = [TaskConfig.model_validate(task_dict) for task_dict in config.custom_tasks]
+            # 后端不再处理 recipe 和 custom_tasks 的判断
+            # 所有任务相关参数全由前端通过 `tasks` 数组传入，确保真正的配置自治
+
+            task_config_list = [
+                TaskConfig.model_validate(task_dict) 
+                for task_dict in config.tasks
+            ]
             
-            # 执行工作流
-            await run_workflow(
-                dataset_kwargs=dataset_kwargs,
-                evaluator_type_list=evaluator_types,
-                chatbot_config=chatbot_config,
-                recipe_type=recipe_type,
-                custom_task_config_list=custom_task_config_list
+            # 执行工作流，参数已被完整处理
+            await run_core_workflow(
+                task_config_list=task_config_list,
+                dataset_config_list=dataset_config_list,
+                evaluator_type_list=evaluator_type_list,
             )
             
             # Workflow 执行完后，统一组装返回
-            eval_report_path = "evaluation_report.md"
-            workflow_log_path = "workflow.md"
+            eval_report_path = os.path.join(run_dir, Secrets.EVALUATION_REPORT_FILENAME)
+            workflow_log_path = os.path.join(run_dir, Secrets.WORKFLOW_LOG_FILENAME)
             
             eval_content = ""
             if os.path.exists(eval_report_path):
@@ -130,6 +171,7 @@ async def run_workflow(config: RunConfigPayload):
             await queue.put(f"[DONE] {json.dumps(error_payload)}")
         finally:
             sse_queue_var.reset(token)
+            run_dir_var.reset(dir_token)
 
     async def event_generator():
         """源源不断取数据推送 SSE。"""
@@ -146,7 +188,16 @@ async def run_workflow(config: RunConfigPayload):
                 yield f"data: {message}\n\n"
                 break
                 
-            # SSE 规范：必须按 data: [内容] \n\n 格式推流
+            # 捕获结构化事件 [[EVENT]]
+            if message.startswith("[[EVENT]] "):
+                event_json_str = message[len("[[EVENT]] "):]
+                event_data = json.loads(event_json_str)
+                
+                # 重新包装为 STREAMING 包含事件载荷
+                yield f"data: {json.dumps({'status': 'STREAMING', 'event': event_data})}\n\n"
+                continue
+                
+            # SSE 规范：普通日志必须按 data: [内容] \n\n 格式推流
             yield f"data: {json.dumps({'status': 'STREAMING', 'log': message})}\n\n"
 
     # 以长连接建立数据传输响应

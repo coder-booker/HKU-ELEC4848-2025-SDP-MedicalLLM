@@ -10,6 +10,10 @@ from typing import List
 from medical_llm_workflow.Domain.tasks.models import TaskConfig, TaskType, MedicalType
 from medical_llm_workflow.Domain.recipes.recipe import Recipe
 from medical_llm_workflow.Domain.recipes.models import RecipeMeta, RecipeType
+from medical_llm_workflow.Domain.prompts.models import PromptTemplate
+from medical_llm_workflow.Domain.tasks.all_tasks.problem_representation_task import ProblemRepresentationTask
+from medical_llm_workflow.Domain.tasks.all_tasks.hypothesis_generation_task import HypothesisGenerationTask
+from medical_llm_workflow.Domain.tasks.all_tasks.hypothesis_evaluation_task import HypothesisEvaluationTask
 
 
 class MedicalReasoning3StepsRecipe(Recipe):
@@ -30,6 +34,7 @@ class MedicalReasoning3StepsRecipe(Recipe):
                 medical_type=MedicalType.PROBLEM_REPRESENTATION,
                 chatbot_config=self.chatbot_config,
                 input_msg_sources=[],
+                prompt_template=PromptTemplate(text=ProblemRepresentationTask.PROMPT_TEMPLATE),
             ),
             TaskConfig(
                 id="Hypothesis Generation Task",
@@ -37,6 +42,7 @@ class MedicalReasoning3StepsRecipe(Recipe):
                 medical_type=MedicalType.HYPOTHESIS_GENERATION,
                 chatbot_config=self.chatbot_config,
                 input_msg_sources=[],
+                prompt_template=PromptTemplate(text=HypothesisGenerationTask.PROMPT_TEMPLATE),
             ),
             TaskConfig(
                 id="Hypothesis Evaluation Task",
@@ -44,6 +50,7 @@ class MedicalReasoning3StepsRecipe(Recipe):
                 medical_type=MedicalType.HYPOTHESIS_EVALUATION,
                 chatbot_config=self.chatbot_config,
                 input_msg_sources=[],
+                prompt_template=PromptTemplate(text=HypothesisEvaluationTask.PROMPT_TEMPLATE),
             ),
         ]
 

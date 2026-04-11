@@ -22,6 +22,7 @@ from medical_llm_workflow.Domain.tasks.models import (
 from medical_llm_workflow.Domain.workflow_context.models import (
     WorkflowContextPort,
 )
+from medical_llm_workflow.utils import emit_event
 
 
 class BaseTask:
@@ -109,6 +110,14 @@ class BaseTask:
         """
         # 先根据工作流状态准备输入消息。
         messages = self.get_messages_for_llm_call(workflow_context_port)
+        # 发出任务开始事件
+        emit_event(
+            "TASK_START",
+            {
+                "task_id": self.config.id,
+                "task_type": self.config.type,
+            },
+        )
             
         # 进行问答
         try:
@@ -145,5 +154,16 @@ class BaseTask:
             "task_context": context,
         }
         workflow_context_port.append_task_record(record)
+        
+        # 发送任务结束事件连同结果返回给前端
+        # 这里转换 dict 因为前端不识别 Pydantic 模型，并且需要过滤内部消息内容。
+        emit_event(
+            "TASK_END",
+            {
+                "task_id": self.config.id,
+                "status": res_message["status"],
+                "content": res_message["content"],
+            },
+        )
         
         return record

@@ -20,10 +20,11 @@ from .models import (
     EvaluationSample,
     EvluationRecord,
 )
+from medical_llm_workflow.serect import Secrets
+import os
 
-
-DEFAULT_REPORT_PATH = "evaluation_report.md"
-DEFAULT_CHART_PATH = "evaluation_chart.mmd"
+DEFAULT_REPORT_PATH = os.path.join(Secrets.RESULT_DIR, Secrets.EVALUATION_REPORT_FILENAME)
+DEFAULT_CHART_PATH = os.path.join(Secrets.RESULT_DIR, Secrets.EVALUATION_CHART_FILENAME)
 
 CompareFn = Callable[[Any, Any, Dict[str, Any]], float]
 

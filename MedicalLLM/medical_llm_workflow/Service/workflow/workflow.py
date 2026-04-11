@@ -32,9 +32,11 @@ from medical_llm_workflow.Domain.benchmark.Evaluator import (
 from medical_llm_workflow.Domain.benchmark.Evaluator import EvaluatorType
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetConfig, DatasetType
 from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import EvaluatorAdaptor
-from medical_llm_workflow.utils import print_log
-# EvluationBatchResult
+from medical_llm_workflow.utils import print_log, emit_event, save_question_log, get_run_dir
 from medical_llm_workflow.Domain.benchmark.Evaluator import EvluationBatchResult
+from medical_llm_workflow.serect import Secrets
+import asyncio
+import os
 
 
 
@@ -260,6 +262,13 @@ class Workflow:
 
         # ---- dataset ----
         # question_item_list 和 all_workflow_contexts 使用相同索引对齐。
+        emit_event(
+            "PHASE_START",
+            {
+                "phase": "dataset",
+                "message": "Processing dataset",
+            },
+        )
         print_log("Initializing dataset inlet...", prefix="[WORKFLOW]")
         dataset_inlet_item_list = self.init_dataset_inlet()
         inlet_tasks: List[TaskConfig] = []
@@ -274,15 +283,56 @@ class Workflow:
 
         smart_extractor_task_config = self.init_extractor()
 
-        # 逐题执行 fire，收集每题上下文。
-        print_log("Executing workflows for each question...", prefix="[WORKFLOW]")
-        for i in range(len(dataset_inlet_item_list)):
-            workflow_context = await self.fire_tasks_execution(
-                inlet_tasks=[inlet_tasks[i]],
-                outlet_tasks=[smart_extractor_task_config],
-            )
-            all_workflow_contexts.append(workflow_context)
+        # 逐题执行 fire，使用信号量控制并发数。
+        emit_event(
+            "PHASE_START",
+            {
+                "phase": "execution",
+                "message": "Running tasks concurrently",
+                "total_questions": len(dataset_inlet_item_list),
+            },
+        )
+        print_log("Executing workflows for each question concurrently...", prefix="[WORKFLOW]")
+        
+        semaphore = asyncio.Semaphore(5)
+        completed_count = 0
+        
+        async def process_question(index: int) -> WorkflowContext:
+            nonlocal completed_count
+            async with semaphore:
+                # 触发每题的单线程任务
+                context = await self.fire_tasks_execution(
+                    inlet_tasks=[inlet_tasks[index]],
+                    outlet_tasks=[smart_extractor_task_config],
+                )
+                # 每跑完一道题就立刻生成独立日志存入独立文件
+                save_question_log(
+                    dataset_type=dataset_inlet_item_list[index].dataset_type,
+                    question_index=index + 1,
+                    workflow_context=context,
+                )
+                completed_count += 1
+                # 向前端抛出题目完成进度
+                emit_event(
+                    "QUESTION_COMPLETED",
+                    {
+                        "completed_questions": completed_count,
+                        "total_questions": len(dataset_inlet_item_list),
+                    },
+                )
+                return context
+                
+        # 并发执行所有题目并保持顺序
+        tasks_to_run = [process_question(i) for i in range(len(dataset_inlet_item_list))]
+        all_workflow_contexts = await asyncio.gather(*tasks_to_run)
 
+        emit_event(
+            "PHASE_START",
+            {
+                "phase": "evaluation",
+                "message": "Evaluating results",
+            },
+        )
         print_log("All workflows executed. Starting evaluation...", prefix="[WORKFLOW]")
         evaluation_result_list = self.evaluate(
             all_workflow_contexts=all_workflow_contexts,
@@ -360,7 +410,10 @@ class Workflow:
         
         print_log("Evaluation Report Generated:\n" + "\n".join(merged_report_lines), prefix="[EVALUATOR]")
 
-        merged_report_path = "evaluation_report.md"
+        
+        run_dir = get_run_dir()
+        merged_report_path = os.path.join(run_dir, Secrets.EVALUATION_REPORT_FILENAME)
+        os.makedirs(run_dir, exist_ok=True)
         with open(merged_report_path, "w", encoding="utf-8") as report_file:
             report_file.write("\n".join(merged_report_lines))
 

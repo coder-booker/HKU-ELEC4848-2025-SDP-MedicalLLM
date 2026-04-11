@@ -8,6 +8,7 @@ import uuid
 
 from medical_llm_workflow.Domain.tasks.models import TaskRecord
 from medical_llm_workflow.Infrastructure import LinkedHashList
+from medical_llm_workflow.utils import print_log
 
 
 
@@ -41,24 +42,6 @@ class WorkflowContext:
         """获取最后一条记录。"""
         record_node = self.conversation_history.get_tail()
         return record_node.value
-    
-    # def get_all_prev_task_records(self, task_id: str) -> List[TaskRecord]:
-    #     """
-    #     获取当前对话历史（返回拷贝）。
-
-    #     Args:
-    #         context: 工作流上下文
-
-    #     Returns:
-    #         对话消息列表的拷贝
-    #     """
-    #     all_prev_task_contexts = []
-    #     all_records: List[TaskRecord] = self.conversation_history.get_all()
-    #     for record in all_records:    # TODO：先假设所有消息都是单线性且不重复的
-    #         if record.task_config.id == task_id:
-    #             break
-    #         all_prev_task_contexts.append(record)
-    #     return all_prev_task_contexts
 
     def append_task_record(self, record: TaskRecord) -> None:
         """
@@ -74,6 +57,7 @@ class WorkflowContext:
 
     def get_task_record(self, task_id: str) -> TaskRecord:
         """按任务 id 获取单条记录。"""
+        # print_log(f"Getting task record for task_id: {task_id}", prefix="[WORKFLOW_CONTEXT]")
         return self.conversation_history.get(task_id).value
     
     def get_all_records(self) -> List[TaskRecord]:
