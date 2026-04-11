@@ -6,10 +6,11 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
+import datetime
 
 from medical_llm_workflow.main import run_core_workflow, DEFAULT_CHATBOT_CONFIG
-from medical_llm_workflow.utils import sse_queue_var, run_dir_var
+from medical_llm_workflow.utils import sse_queue_var, run_dir_var, emit_event
 
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetConfig
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
@@ -18,8 +19,8 @@ from medical_llm_workflow.Infrastructure.LLM_client.models import ChatbotType, P
 from medical_llm_workflow.Domain.recipes.models import RecipeType
 from medical_llm_workflow.Domain.recipes.recipe_factory import RecipeFactory
 from medical_llm_workflow.serect import Secrets
-import datetime
-            
+from medical_llm_workflow.Service.storage_service import StorageService
+
 
 app = FastAPI(title="Medical LLM Workflow Backend Service")
 
@@ -95,6 +96,29 @@ async def get_workflow_options():
     }
 
 
+@app.get("/api/results/{run_id}/{dataset_type}/{question_index}")
+async def get_question_result(
+    run_id: str,
+    dataset_type: str,
+    question_index: int,
+):
+    """
+    提供给前端的 API 接口。
+    用于在点击题目列表项后，从指定的运行记录文件夹中读取某道题目的结构化 JSON 日志数据。
+    """
+    
+    data = StorageService.read_question_json(
+        run_id=run_id,
+        dataset_type=dataset_type,
+        question_index=question_index,
+    )
+    
+    # 检查题目数据文件是否存在，如果不存在直接抛出 404
+    if data is None:
+        return {"error": "Result not found"}, 404
+        
+    return data
+
 @app.post("/api/run")
 async def run_workflow(config: RunConfigPayload):
     """
@@ -116,6 +140,13 @@ async def run_workflow(config: RunConfigPayload):
         token = sse_queue_var.set(queue)
         dir_token = run_dir_var.set(run_dir)
         try:
+            # 建立记录上下文事件，方便前端知晓本次请求实际记录存放位置
+            emit_event(
+                "WORKFLOW_STARTED", 
+                {"run_id": ts},
+            )
+            # raise Exception("测试异常捕获机制")
+            
             # 组装传入的评测集配置
             dataset_config_list = [
                 DatasetConfig(
@@ -135,7 +166,7 @@ async def run_workflow(config: RunConfigPayload):
             ]
             
             # 执行工作流，参数已被完整处理
-            await run_core_workflow(
+            contexts, report_info = await run_core_workflow(
                 task_config_list=task_config_list,
                 dataset_config_list=dataset_config_list,
                 evaluator_type_list=evaluator_type_list,
@@ -160,6 +191,7 @@ async def run_workflow(config: RunConfigPayload):
                 "status": "DONE",
                 "evaluation_report": eval_content,
                 "workflow_log": log_content,
+                "evaluation_data": report_info["results"] if report_info else None,
             }
             await queue.put(f"[DONE] {json.dumps(final_payload)}")
             

@@ -7,7 +7,6 @@
 """
 from typing import List
 import fastapi_poe as fp
-from os import getenv
 import asyncio
 
 from medical_llm_workflow.schemas.models import ConversationMessage
@@ -15,7 +14,6 @@ from ..base_client import BaseLLMClient
 from ..models import PoeChatbotConfig
 from medical_llm_workflow.serect import Secrets
 from medical_llm_workflow.utils import print_log
-import tiktoken
 
 
 
@@ -28,7 +26,7 @@ class PoeClient(BaseLLMClient):
     def __init__(self):
         key_name = f"{PoeClient.client_name.upper()}_KEY"
         self.api_key = Secrets.POE_KEY
-        print_log(f"Initialized PoeClient with API key from env var '{key_name}'", prefix="[LLM]")
+        # print_log(f"Initialized PoeClient with API key from env var '{key_name}'", prefix="[LLM]", debug=True)
 
     async def call_chatbot(
         self,
@@ -66,7 +64,7 @@ class PoeClient(BaseLLMClient):
             chunks.append(" response.")
             return "".join(chunks)
         
-        print_log("Calling Poe API...", prefix="[LLM]")
+        print_log("Calling Poe API...", prefix="[LLM]", debug=True)
         
         max_retries = 3
         timeout_seconds = 30  # 设置一个宽容的单次调用超时阈值
@@ -90,10 +88,10 @@ class PoeClient(BaseLLMClient):
                 
             except asyncio.TimeoutError:
                 err_msg = f"Attempt {attempt + 1}/{max_retries} timed out after {timeout_seconds}s."
-                print_log(err_msg, prefix="[LLM]")
+                print_log(err_msg, prefix="[LLM]", debug=True)
             except Exception as e:
                 err_msg = f"Attempt {attempt + 1}/{max_retries} failed with error: {str(e)}"
-                print_log(err_msg, prefix="[LLM]")
+                print_log(err_msg, prefix="[LLM]", debug=True)
 
             # 若还未到最后一次尝试，则短暂停顿后重发请求
             if attempt < max_retries - 1:

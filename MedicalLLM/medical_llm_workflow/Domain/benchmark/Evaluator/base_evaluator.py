@@ -19,6 +19,8 @@ from .models import (
     EvaluationRunOutput,
     EvaluationSample,
     EvluationRecord,
+    EVALUATOR_DISPLAY_MAP,
+    EvaluatorDisplayType
 )
 from medical_llm_workflow.serect import Secrets
 import os
@@ -152,6 +154,7 @@ class BaseEvaluator(ABC):
 
         return {
             "evaluator_name": self.evaluator_name,
+            "display_type": EVALUATOR_DISPLAY_MAP.get(self.evaluator_name, EvaluatorDisplayType.BAR_CHART.value),
             "metric_name": self.metric_name,
             # "params": self.params,
             "total_samples": len(records),

@@ -2,32 +2,13 @@
 
 import { useState, useEffect } from "react";
 
+
 import { DATASET_CONTEXT_ID } from "../components/PromptEditor";
 import { TaskCard } from "../components/TaskCard";
-
-type ChatbotConfig = {
-  chatbot_type: string;
-  model: string;
-  temperature: number;
-  max_tokens: number;
-};
-
-type PromptTemplate = {
-  text: string;
-};
-
-type TaskConfig = {
-  id: string;
-  type: string;
-  medical_type: string;
-  chatbot_config: ChatbotConfig;
-  prompt_template?: PromptTemplate;
-  input_msg_sources?: string[];
-  max_retries?: number;
-  timeout?: number;
-  connect_to?: string[];
-  evaluator_type_list?: string[];
-};
+import { QuestionStatusList } from "../components/QuestionStatusList";
+import { QuestionDetailView } from "../components/QuestionDetailView";
+import { EvaluationDashboard } from "../components/EvaluationDashboard";
+import { TaskConfig, QuestionStatus, TaskState } from "../types";
 
 type Option = { label: string; value: string };
 // 新增带 tasks 的 Recipe 类型
@@ -40,13 +21,6 @@ type OptionsState = {
   recipes: RecipeOption[];
 };
 
-// 任务执行状态
-type TaskState = {
-  id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  content?: string;
-};
-
 // 工作流运行阶段
 type WorkflowPhase = "idle" | "dataset" | "execution" | "evaluation" | "completed";
 
@@ -56,6 +30,8 @@ type WorkflowState = {
   message: string;
   currentQuestion: number;
   totalQuestions: number;
+  runId: string;
+  questions: QuestionStatus[];
   tasks: Record<string, TaskState>;
 };
 
@@ -64,8 +40,12 @@ export default function Home() {
   // 追踪流程执行情况
   const [isRunning, setIsRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
-  const [evaluationReport, setEvaluationReport] = useState<string>("");
+  const [evaluationData, setEvaluationData] = useState<any>(null);
   const [error, setError] = useState<string>("");
+  
+  // 对于新需求：点击列表进入详细弹层
+  const [selectedQuestion, setSelectedQuestion] = useState<QuestionStatus | null>(null);
+  const [questionDetail, setQuestionDetail] = useState<any>(null); // 保存请求来的结构化日志
 
   // 模块化显示状态管理
   const [workflowState, setWorkflowState] = useState<WorkflowState>({
@@ -73,6 +53,8 @@ export default function Home() {
     message: "",
     currentQuestion: 0,
     totalQuestions: 0,
+    runId: "",
+    questions: [],
     tasks: {},
   });
 
@@ -115,13 +97,16 @@ export default function Home() {
     const handleReset = () => {
       setHasRun(false);
       setIsRunning(false);
-      setEvaluationReport("");
       setError("");
+      setSelectedQuestion(null);
+      setQuestionDetail(null);
       setWorkflowState({
         phase: "idle",
         message: "",
         currentQuestion: 0,
         totalQuestions: 0,
+        runId: "",
+        questions: [],
         tasks: {},
       });
     };
@@ -254,7 +239,6 @@ export default function Home() {
   const handleStartWorkflow = async () => {
     setIsRunning(true);
     setHasRun(true);
-    setEvaluationReport("");
     setError("");
 
     // 初始化卡片流状态
@@ -263,8 +247,12 @@ export default function Home() {
       message: "Starting workflow...",
       currentQuestion: 0,
       totalQuestions: 0,
+      runId: "",
+      questions: [],
       tasks: {},
     });
+    setSelectedQuestion(null);
+    setQuestionDetail(null);
 
     // 组装给后端的纯配置组合
     const payload = {
@@ -313,7 +301,7 @@ export default function Home() {
               const payload = JSON.parse(payloadStr);
 
               if (payload.status === "DONE") {
-                setEvaluationReport(payload.evaluation_report);
+                setEvaluationData(payload.evaluation_data);
                 setWorkflowState((prev) => ({
                   ...prev,
                   phase: "completed",
@@ -348,16 +336,67 @@ export default function Home() {
               setWorkflowState((prev) => {
                 const newState = { ...prev };
 
-                if (eventType === "PHASE_START") {
+                if (eventType === "WORKFLOW_STARTED") {
+                  newState.runId = eventData.run_id;
+                } else if (eventType === "PHASE_START") {
                   newState.phase = eventData.phase;
                   newState.message = eventData.message;
                   if (eventData.total_questions) {
                     newState.totalQuestions = eventData.total_questions;
                   }
+                } else if (eventType === "QUESTION_STARTED") {
+                  // 这里可以用来构建或更新某个问题处于执行中的状态
+                  const qIdx = eventData.question_index;
+                  const dType = eventData.dataset_type;
+                  
+                  // 初始化新题目的状态，或更新状态为 running
+                  const existingQuestion = newState.questions.find(q => q.index === qIdx && q.datasetType === dType);
+                  if (existingQuestion) {
+                    existingQuestion.status = "running";
+                  } else {
+                    newState.questions.push({
+                      index: qIdx,
+                      datasetType: dType,
+                      status: "running"
+                    });
+                  }
                 } else if (eventType === "QUESTION_COMPLETED") {
                   newState.currentQuestion = eventData.completed_questions;
                   newState.totalQuestions = eventData.total_questions;
-                }
+                  
+                  const qIdx = eventData.question_index;
+                  const dType = eventData.dataset_type;
+                  
+                  // 将完成的题目标记为 completed
+                  const existingQuestion = newState.questions.find(q => q.index === qIdx && q.datasetType === dType);
+                  if (existingQuestion) {
+                    existingQuestion.status = "completed";
+                  } else {
+                    // 以防万一 STARTED 没有生效
+                    newState.questions.push({
+                      index: qIdx,
+                      datasetType: dType,
+                      status: "completed"
+                    });
+                  }
+                } else if (eventType === "QUESTION_FAILED") {
+                  const qIdx = eventData.question_index;
+                  const dType = eventData.dataset_type;
+                    const errorMsg = eventData.error || "Unknown Error";
+                    
+                    const existingQuestion = newState.questions.find(q => q.index === qIdx && q.datasetType === dType);
+                    if (existingQuestion) {
+                      existingQuestion.status = "failed";
+                      existingQuestion.error = errorMsg;
+                    } else {
+                      newState.questions.push({
+                        index: qIdx,
+                        datasetType: dType,
+                        status: "failed",
+                        error: errorMsg
+                      });
+                    }
+                  }
 
                 return newState;
               });
@@ -375,6 +414,32 @@ export default function Home() {
       setIsRunning(false);
     }
   };
+
+  const handleViewDetail = async (qStatus: QuestionStatus) => {
+    setSelectedQuestion(qStatus);
+    setQuestionDetail(null); // Clear previous detail first
+    try {
+      const response = await fetch(`http://localhost:8000/api/results/${workflowState.runId}/${qStatus.datasetType}/${qStatus.index}`);
+      if (response.ok) {
+        const data = await response.json();
+        setQuestionDetail(data);
+      } else {
+        console.error("Failed to fetch question detail.");
+        setQuestionDetail({ error: qStatus.error || "Failed to load details. The backend might have crashed before saving." });
+      }
+    } catch (err) {
+      console.error("Error fetching detail:", err);
+      setQuestionDetail({ error: qStatus.error || "Network error fetching details." });
+    }
+  };
+
+  const handleBackToList = () => {
+    setSelectedQuestion(null);
+  };
+
+  const hasFailedQuestion = workflowState.questions.some(q => q.status === "failed");
+  const isWorkflowError = !!error;
+  const isFailure = hasFailedQuestion || isWorkflowError;
 
   return (
     <main className="min-h-screen p-4 bg-gray-50 text-gray-900 font-sans">
@@ -474,29 +539,106 @@ export default function Home() {
           </details>
 
           {/* 全局状态条，折叠配置后依然可见 */}
-          <div className="flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-100">
-            <div className="flex items-center gap-4">
-              <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider block">Phase:</span>
-              <span className="text-sm font-bold text-blue-900">
-                {workflowState.phase === 'idle' ? 'Ready to Start' :
+          <div className={`relative overflow-hidden flex items-center justify-between p-3 rounded-lg border transition-colors ${
+            isFailure ? 'border-red-500 bg-red-500' :
+            workflowState.phase === 'completed' ? 'border-green-500 bg-green-500' : 'border-blue-100 bg-blue-50'
+          }`}>
+            {/* 进度条层 */}
+            <div 
+              className={`absolute left-0 top-0 bottom-0 transition-all duration-500 ease-out ${
+                isFailure 
+                ? 'bg-red-500' 
+                : workflowState.phase === 'completed' 
+                  ? 'bg-green-500'
+                  : 'bg-green-300 opacity-60'
+              }`}
+              style={{ 
+                width: isFailure && workflowState.phase !== 'completed'
+                  ? '100%' 
+                  : workflowState.phase === 'completed' || workflowState.phase === 'evaluation' 
+                    ? '100%' 
+                    : `${workflowState.totalQuestions > 0 ? (workflowState.currentQuestion / workflowState.totalQuestions) * 100 : 0}%`
+              }}
+            />
+
+            <div className="relative z-10 flex items-center gap-4">
+              <span className={`text-xs font-semibold uppercase tracking-wider block ${
+                isFailure ? 'text-red-100' :
+                workflowState.phase === 'completed' ? 'text-green-100' : 'text-blue-700'
+              }`}>Phase:</span>
+              <span className={`text-sm font-bold ${
+                isFailure || workflowState.phase === 'completed' ? 'text-white' : 'text-blue-900'
+              }`}>
+                {isWorkflowError ? 'Workflow Stopped on Error' :
+                workflowState.phase === 'idle' ? 'Ready to Start' :
                   workflowState.phase === 'dataset' ? 'Processing Dataset' :
                     workflowState.phase === 'execution' ? 'Executing Tasks' :
                       workflowState.phase === 'evaluation' ? 'Evaluating Results' :
-                        'Completed'}
+                        (hasFailedQuestion ? 'Completed with Errors' : 'Successfully Completed')}
               </span>
-              <span className="text-sm text-blue-600 block ml-4 border-l border-blue-200 pl-4">{workflowState.message || "Waiting state..."}</span>
+              <span className={`text-sm block ml-4 border-l pl-4 ${
+                isFailure ? 'text-red-100 border-red-400' :
+                workflowState.phase === 'completed' ? 'text-green-100 border-green-300' : 'text-blue-600 border-blue-200'
+              }`}>{workflowState.message || "Waiting state..."}</span>
             </div>
 
             {workflowState.totalQuestions > 0 && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Completed:</span>
-                <span className="text-sm font-bold text-blue-900 bg-white px-2 py-0.5 rounded shadow-sm">
+              <div className="relative z-10 flex items-center gap-3">
+                <span className={`text-xs font-semibold uppercase tracking-wider ${
+                  isFailure ? 'text-red-100' :
+                  workflowState.phase === 'completed' ? 'text-green-100' : 'text-blue-700'
+                }`}>Completed:</span>
+                <span className={`text-sm font-bold bg-white px-2 py-0.5 rounded shadow-sm ${
+                  isFailure ? 'text-red-700' :
+                  workflowState.phase === 'completed' ? 'text-green-600' : 'text-blue-900'
+                }`}>
                   {workflowState.currentQuestion} / {workflowState.totalQuestions}
                 </span>
               </div>
             )}
           </div>
         </div>
+
+        {/* Question Execution Status Section (Only visible when workflow has run/is running) */}
+        {(hasRun || isRunning) && (
+          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">
+                {selectedQuestion ? `Question Detail: ${selectedQuestion.datasetType} #${selectedQuestion.index}` : "Execution Progress (Per Question)"}
+              </h2>
+              {selectedQuestion && (
+                <button
+                  onClick={handleBackToList}
+                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 transition"
+                >
+                  ← Back to List
+                </button>
+              )}
+            </div>
+
+            {/* 全局顶部错误提示框 */}
+            {error && !selectedQuestion && (
+              <div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 shadow-sm">
+                <h3 className="font-bold mb-1 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  Workflow Error
+                </h3>
+                <p className="text-sm font-mono whitespace-pre-wrap ml-7">{error}</p>
+              </div>
+            )}
+
+            {!selectedQuestion ? (
+              <QuestionStatusList
+                questions={workflowState.questions}
+                onViewDetail={handleViewDetail}
+              />
+            ) : (
+              <QuestionDetailView questionDetail={questionDetail} />
+            )}
+          </div>
+        )}
 
         {/* 工作流任务与结果组合区域 */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
@@ -535,33 +677,14 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 错误提示框 */}
-        {error && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 shadow-sm">
-            <span className="font-semibold">Error: </span>{error}
-          </div>
-        )}
-
         {/* 最终评估报告折叠面板 */}
-        <details className="group bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100" open={!!evaluationReport}>
+        <details className="group bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100" open={evaluationData && evaluationData.length > 0}>
           <summary className="px-6 py-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-800 cursor-pointer select-none hover:bg-gray-100 transition-colors">
             Final Evaluation Report
           </summary>
 
-          <div className="p-6 overflow-y-auto max-h-[50vh]">
-            {evaluationReport ? (
-              <div className="prose prose-sm max-w-none text-gray-700">
-                <pre className="bg-gray-800 text-gray-100 p-5 rounded-lg whitespace-pre-wrap text-sm shadow-inner font-mono">
-                  {evaluationReport}
-                </pre>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center p-8 text-gray-400 italic">
-                {isRunning
-                  ? "Workflow is executing... Awaiting final report payload."
-                  : "No report generated yet."}
-              </div>
-            )}
+          <div className="p-6 overflow-y-auto max-h-[70vh]">
+            <EvaluationDashboard evaluationData={evaluationData} />
           </div>
         </details>
 

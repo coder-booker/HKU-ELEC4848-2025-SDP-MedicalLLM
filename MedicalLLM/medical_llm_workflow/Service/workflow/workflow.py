@@ -6,11 +6,12 @@
 3) 依次创建并执行任务；
 4) 汇总并打印 benchmark 结果。
 """
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from typing_extensions import TypedDict
 import uuid
-from pydantic import BaseModel, Field
-import json
+from pydantic import BaseModel
+import asyncio
+
 
 from medical_llm_workflow.schemas import (
     ConversationMessageStatus,
@@ -34,9 +35,7 @@ from medical_llm_workflow.Domain.benchmark.Dataset import DatasetConfig, Dataset
 from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import EvaluatorAdaptor
 from medical_llm_workflow.utils import print_log, emit_event, save_question_log, get_run_dir
 from medical_llm_workflow.Domain.benchmark.Evaluator import EvluationBatchResult
-from medical_llm_workflow.serect import Secrets
-import asyncio
-import os
+from medical_llm_workflow.Service.storage_service import StorageService
 
 
 
@@ -152,7 +151,7 @@ class Workflow:
         dataset_inlet_item_list: List[DatasetInletItem],
     ) -> List[EvaluationResultItemForReport]:
         """执行全部 evaluator，并在最后融合输出一份统一报告。"""
-        print_log("=== Evaluation Results ===", prefix="[EVALUATOR]")
+        # print_log("=== Evaluation Results ===", prefix="[EVALUATOR]", debug=True)
         evaluation_schema = EvaluatorAdaptor.build_expected_schema(self.evaluator_type_list)
 
         evaluation_sample_list: List[EvaluationSample] = []
@@ -204,18 +203,19 @@ class Workflow:
                 },
             )
 
-            print_log(f"\n{'='*15} 📊 Evaluator: {evaluator_type.value} {'='*15}", prefix="[EVALUATOR]")
-            print_log(f"Average Score: {evaluation_result['average_score']:.4f}", prefix="[EVALUATOR]")
-            print_log("Summary:", prefix="[EVALUATOR]")
-            for k, v in evaluation_result["summary"].items():
-                print_log(f"  - {k}: {v}", prefix="[EVALUATOR]")
-            print_log(f"{'='*(34 + len(evaluator_type.value))}\n", prefix="[EVALUATOR]")
+            # print_log(f"\n{'='*15} 📊 Evaluator: {evaluator_type.value} {'='*15}", prefix="[EVALUATOR]")
+            # print_log(f"Average Score: {evaluation_result['average_score']:.4f}", prefix="[EVALUATOR]")
+            # print_log("Summary:", prefix="[EVALUATOR]")
+            # for k, v in evaluation_result["summary"].items():
+            #     print_log(f"  - {k}: {v}", prefix="[EVALUATOR]")
+            # print_log(f"{'='*(34 + len(evaluator_type.value))}\n", prefix="[EVALUATOR]")
         
         return evaluation_result_list
 
 
     async def fire_tasks_execution(
         self,
+        workflow_context: WorkflowContext,
         inlet_tasks: List[TaskConfig] = [],
         outlet_tasks: List[TaskConfig] = [],
     ) -> WorkflowContext:
@@ -223,15 +223,13 @@ class Workflow:
         执行单道题工作流并返回对应上下文。
 
         Args:
+            workflow_context: 工作流上下文实例
             inlet_tasks: 题目注入任务配置列表，会被顺序接在工作流头
             outlet_tasks: 题目输出任务配置列表，会被顺序接在工作流尾中
 
         Returns:
             工作流上下文，包含本次 fire_tasks_execution 的全部对话记录和结果。
         """
-        workflow_context = WorkflowContext(
-            workflow_id=self.id,
-        )
 
         # core task 只保留用户配置，不在成员变量上原地 insert，避免多轮 fire_tasks_execution 污染配置。
         core_task_config_list = list(self.task_config_list)
@@ -256,7 +254,7 @@ class Workflow:
 
         return workflow_context
 
-    async def run(self) -> List[WorkflowContext]:
+    async def run(self) -> Tuple[List[WorkflowContext], Dict[str, Any]]:
         """初始化 dataset 与 evaluator，执行全量工作流并返回全部上下文。"""
         all_workflow_contexts: List[WorkflowContext] = []
 
@@ -269,7 +267,7 @@ class Workflow:
                 "message": "Processing dataset",
             },
         )
-        print_log("Initializing dataset inlet...", prefix="[WORKFLOW]")
+        print_log("Initializing dataset inlet...", prefix="[WORKFLOW]", debug=True)
         dataset_inlet_item_list = self.init_dataset_inlet()
         inlet_tasks: List[TaskConfig] = []
         for dataset_inlet_item in dataset_inlet_item_list:
@@ -292,39 +290,91 @@ class Workflow:
                 "total_questions": len(dataset_inlet_item_list),
             },
         )
-        print_log("Executing workflows for each question concurrently...", prefix="[WORKFLOW]")
+        print_log("Executing workflows for each question concurrently...", prefix="[WORKFLOW]", debug=True)
         
         semaphore = asyncio.Semaphore(5)
         completed_count = 0
         
         async def process_question(index: int) -> WorkflowContext:
             nonlocal completed_count
+            
+            # 使用基于 1 索引的友好题目标号进行界面展示传递
+            current_dataset = dataset_inlet_item_list[index].dataset_type
+            display_index = index + 1
+            
+            # 在单题执行前发送“题目开始”事件，携带所属数据集类型
+            emit_event(
+                "QUESTION_STARTED",
+                {
+                    "question_index": display_index,
+                    "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                },
+            )
+            
             async with semaphore:
-                # 触发每题的单线程任务
-                context = await self.fire_tasks_execution(
-                    inlet_tasks=[inlet_tasks[index]],
-                    outlet_tasks=[smart_extractor_task_config],
-                )
-                # 每跑完一道题就立刻生成独立日志存入独立文件
-                save_question_log(
-                    dataset_type=dataset_inlet_item_list[index].dataset_type,
-                    question_index=index + 1,
-                    workflow_context=context,
-                )
-                completed_count += 1
-                # 向前端抛出题目完成进度
-                emit_event(
-                    "QUESTION_COMPLETED",
-                    {
-                        "completed_questions": completed_count,
-                        "total_questions": len(dataset_inlet_item_list),
-                    },
-                )
-                return context
-                
+                context = WorkflowContext(workflow_id=self.id)
+                try:
+                    # 触发每题的单线程任务
+                    await self.fire_tasks_execution(
+                        workflow_context=context,
+                        inlet_tasks=[inlet_tasks[index]],
+                        outlet_tasks=[smart_extractor_task_config],
+                    )
+                    # 每跑完一道题就立刻生成独立日志存入独立文件
+                    save_question_log(
+                        dataset_type=current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                        question_index=display_index,
+                        workflow_context=context,
+                    )
+                    completed_count += 1
+                    # mock error for testing
+                    # if completed_count == 2:
+                    #     raise Exception("Mock error for testing error handling and frontend notification.")
+                    
+                    # 向前端抛出题目完成进度以及该题的基本信息
+                    emit_event(
+                        "QUESTION_COMPLETED",
+                        {
+                            "completed_questions": completed_count,
+                            "total_questions": len(dataset_inlet_item_list),
+                            "question_index": display_index,
+                            "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                        },
+                    )
+                    return context
+                except Exception as e:
+                    print_log(f"Error processing question {display_index}: {e}", prefix="[ERROR]")
+                    
+                    # Even if there's an error, save the partial context and the error
+                    save_question_log(
+                        dataset_type=current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                        question_index=display_index,
+                        workflow_context=context,
+                        error=str(e),
+                    )
+                    
+                    emit_event(
+                        "QUESTION_FAILED",
+                        {
+                            "question_index": display_index,
+                            "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                            "error": str(e),
+                        },
+                    )
+                    return e
+                    
         # 并发执行所有题目并保持顺序
         tasks_to_run = [process_question(i) for i in range(len(dataset_inlet_item_list))]
-        all_workflow_contexts = await asyncio.gather(*tasks_to_run)
+        gathered_results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
+        
+        all_workflow_contexts: List[WorkflowContext] = []
+        successful_inlet_items: List[DatasetInletItem] = []
+        for idx, result in enumerate(gathered_results):
+            if isinstance(result, Exception):
+                # We skip evaluating contexts that failed
+                continue
+            all_workflow_contexts.append(result)
+            successful_inlet_items.append(dataset_inlet_item_list[idx])
 
         emit_event(
             "PHASE_START",
@@ -333,19 +383,24 @@ class Workflow:
                 "message": "Evaluating results",
             },
         )
-        print_log("All workflows executed. Starting evaluation...", prefix="[WORKFLOW]")
+        print_log("All workflows executed. Starting evaluation...", prefix="[WORKFLOW]", debug=True)
+        
+        if len(all_workflow_contexts) == 0:
+            print_log("No questions completed successfully. Skipping evaluation.", prefix="[WORKFLOW]")
+            return [], {}
+
         evaluation_result_list = self.evaluate(
             all_workflow_contexts=all_workflow_contexts,
-            dataset_inlet_item_list=dataset_inlet_item_list,
+            dataset_inlet_item_list=successful_inlet_items,
         )
         
         report_info = self.build_report(
             evaluation_result_list=evaluation_result_list,
-            dataset_inlet_item_list=dataset_inlet_item_list,
+            dataset_inlet_item_list=successful_inlet_items,
         )
-        print_log(f"Final evaluation report generated: {report_info['report_path']}", prefix="[WORKFLOW]")
+        print_log(f"Final evaluation report generated: {report_info['report_path']}", prefix="[WORKFLOW]", debug=True)
 
-        return all_workflow_contexts
+        return all_workflow_contexts, report_info
 
     def build_report(
         self,
@@ -408,14 +463,16 @@ class Workflow:
                 merged_report_lines.append(f"- **Ground Truth**: {truth}")
                 merged_report_lines.append("")
         
-        print_log("Evaluation Report Generated:\n" + "\n".join(merged_report_lines), prefix="[EVALUATOR]")
-
+        print_log("Evaluation Report Generated", prefix="[EVALUATOR]", debug=True)
+        # print_log("\n".join(merged_report_lines), prefix="[EVALUATOR]", debug=True)
         
         run_dir = get_run_dir()
-        merged_report_path = os.path.join(run_dir, Secrets.EVALUATION_REPORT_FILENAME)
-        os.makedirs(run_dir, exist_ok=True)
-        with open(merged_report_path, "w", encoding="utf-8") as report_file:
-            report_file.write("\n".join(merged_report_lines))
+        
+        # 将总结评测报告委托给独立存储服务落地
+        merged_report_path = StorageService.write_evaluation_report(
+            run_dir=run_dir,
+            report_content="\n".join(merged_report_lines),
+        )
 
         return {
             "report_path": merged_report_path,

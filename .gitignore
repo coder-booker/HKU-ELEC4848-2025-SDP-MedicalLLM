@@ -3,3 +3,4 @@ dataset/
 __pycache__/
 .env.local
 results/
+node_modules/

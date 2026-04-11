@@ -8,7 +8,6 @@ import uuid
 
 from medical_llm_workflow.Domain.tasks.models import TaskRecord
 from medical_llm_workflow.Infrastructure import LinkedHashList
-from medical_llm_workflow.utils import print_log
 
 
 

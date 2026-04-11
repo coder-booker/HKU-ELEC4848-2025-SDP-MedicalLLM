@@ -22,6 +22,22 @@ export type TaskConfig = {
   evaluator_type_list?: string[];
 };
 
+export type TaskState = {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  content?: string;
+};
+
+export type QuestionStatus = {
+  index: number;
+  datasetType: string;
+  status: "pending" | "running" | "completed" | "failed";
+  error?: string;
+};
+//   connect_to?: string[];
+//   evaluator_type_list?: string[];
+// };
+
 export type Option = { label: string; value: string };
 
 export type RecipeOption = Option & { tasks: TaskConfig[] };
@@ -34,11 +50,11 @@ export type OptionsState = {
   recipes: RecipeOption[];
 };
 
-export type TaskState = {
-  id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  content?: string;
-};
+// export type TaskState = {
+//   id: string;
+//   status: "pending" | "running" | "completed" | "failed";
+//   content?: string;
+// };
 
 export type WorkflowPhase = "idle" | "dataset" | "execution" | "evaluation" | "completed";
 

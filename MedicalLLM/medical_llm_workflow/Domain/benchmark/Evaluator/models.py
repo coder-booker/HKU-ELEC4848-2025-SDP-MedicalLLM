@@ -26,6 +26,18 @@ class EvaluationSample(TypedDict):
     dataset_ground_truth_dict: Dict[str, Any]
     # metadata: Dict[str, Any] = Field(default_factory=dict)
 
+from enum import Enum
+
+class EvaluatorDisplayType(str, Enum):
+    PERCENTAGE = "percentage"
+    BAR_CHART = "bar_chart"
+    MIXED = "mixed"
+
+EVALUATOR_DISPLAY_MAP = {
+    "accuracy_evaluator": EvaluatorDisplayType.PERCENTAGE.value,
+    "base_evaluator": EvaluatorDisplayType.BAR_CHART.value,
+}
+
 class EvluationRecord(TypedDict):
     """
     - sample_id: str - 样本唯一标识
@@ -56,6 +68,7 @@ class EvluationBatchResult(TypedDict):
     # - params: Dict[str, Any] - 评测参数配置
 
     evaluator_name: str
+    display_type: str
     metric_name: str
     # params: Dict[str, Any] = Field(default_factory=dict)
     total_samples: int = 0

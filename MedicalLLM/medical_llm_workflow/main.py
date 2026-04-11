@@ -5,7 +5,8 @@
 """
 import asyncio
 import traceback
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 
 from medical_llm_workflow.Domain.tasks import TaskConfig, TaskContext
 from medical_llm_workflow.Domain.workflow_context.workflow_context import WorkflowContext
@@ -44,7 +45,7 @@ async def run_core_workflow(
     task_config_list: List[TaskConfig],
     dataset_config_list: List[DatasetConfig],
     evaluator_type_list: List[EvaluatorType],
-):
+) -> Tuple[List[WorkflowContext], Dict[str, Any]]:
     """
     工作流核心执行函数。
     只接收预处理后的纯数据，不再处理依赖外部的配置逻辑。
@@ -61,10 +62,10 @@ async def run_core_workflow(
     # 直接包裹主执行与日志输出逻辑，不需要过度抓取边界异常
     try:
         # 执行工作流全流程
-        print_log("Running workflow...", prefix="[WORKFLOW]")
-        await workflow.run()
+        print_log("Running workflow...", prefix="[WORKFLOW]", debug=True)
+        return await workflow.run()
     except Exception as e:
-        print_log(f"Error occurred: {e}\n{traceback.format_exc()}", prefix="[WORKFLOW]")
+        print_log(f"Error occurred: {e}\n{traceback.format_exc()}", prefix="[WORKFLOW]", debug=True)
         raise
 
 
