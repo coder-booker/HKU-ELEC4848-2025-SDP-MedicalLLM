@@ -430,31 +430,50 @@ class Workflow:
         merged_report_lines.append(f"- Total Evaluation Tasks: {len(evaluation_result_list)}")
         merged_report_lines.append("")
 
-        for evaluation_item in evaluation_result_list:
-            dataset_type = evaluation_item["dataset_type"]
-            evaluator_name = evaluation_item["evaluator_name"]
-            evaluation_result = evaluation_item["result"]
-            report_text = evaluation_item["report_text"]
+        from collections import defaultdict
+        dataset_eval_map = defaultdict(list)
+        for item in evaluation_result_list:
+            dataset_eval_map[item["dataset_type"]].append(item)
+
+        for dataset_type, eval_items in dataset_eval_map.items():
+            merged_report_lines.append(f"# Dataset: {dataset_type}")
+            merged_report_lines.append("")
             
-            merged_report_lines.append(f"# Dataset: {dataset_type} | Evaluator: {evaluator_name}")
-            merged_report_lines.append(report_text)
-            
-            merged_report_lines.append("### Details with Questions (Workflow Level)")
+            # Print summaries for all evaluators
+            for evaluation_item in eval_items:
+                evaluator_name = evaluation_item["evaluator_name"]
+                report_text = evaluation_item["report_text"]
+                # merged_report_lines.append(f"## Evaluator: {evaluator_name} Summary")
+                merged_report_lines.append(report_text)
+                merged_report_lines.append("")
+
+            merged_report_lines.append("## Details with Questions (Workflow Level)")
             merged_report_lines.append("")
             
             # 找到对应这个 dataset 的所有 inlet_items 来对齐 record。由于顺序在 evaluate 时是固定的。
             matched_inlet_items = [inlet for inlet in dataset_inlet_item_list if inlet.dataset_type.value == dataset_type or str(inlet.dataset_type) == dataset_type]
+            
+            # 由于所有 evaluator 处理同样的提取结果和同样的问题记录，我们取第一个 evaluator 的 records 作为基准拿题面和预测
+            first_evaluator_records = eval_items[0]["result"]["records"]
 
-            for idx, record in enumerate(evaluation_result["records"]):
+            for idx, first_record in enumerate(first_evaluator_records):
                 # 提取对应题目并截取前 100 个字符保证简洁
                 inlet_item = matched_inlet_items[idx]
                 short_question = inlet_item.text_question.replace("\n", " ")
                 
                 # record 包含 prediction, ground_truth 和 score
-                pred = str(record.get('prediction', 'No prediction'))
-                truth = str(record.get('ground_truth', 'Unknown'))
+                pred = str(first_record.get('prediction', 'No prediction'))
+                truth = str(first_record.get('ground_truth', 'Unknown'))
                 
-                merged_report_lines.append(f"**Sample {idx + 1}** (Score: {record['score']})")
+                # 收集各个 evaluator 给这道题打的分数和独立日志
+                scores_str = []
+                for ev_item in eval_items:
+                    ev_name = ev_item["evaluator_name"]
+                    ev_record = ev_item["result"]["records"][idx]
+                    scores_str.append(f"{ev_name}: {ev_record['score']}")
+                
+                merged_report_lines.append(f"**Sample {idx + 1}**")
+                merged_report_lines.append(f"- **Scores**: {', '.join(scores_str)}")
                 merged_report_lines.append(f"- **Question**: {short_question}")
                 merged_report_lines.append(f"- **LLM Prediction**: {pred}")
                 merged_report_lines.append(f"- **Ground Truth**: {truth}")

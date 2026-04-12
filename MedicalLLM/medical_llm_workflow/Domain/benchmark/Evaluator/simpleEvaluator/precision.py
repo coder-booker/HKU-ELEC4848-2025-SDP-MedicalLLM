@@ -28,7 +28,7 @@ class PrecisionEvaluator(BaseEvaluator):
     
     # 指定 llm 用于评测的输出格式协议，提供唯一 key 避免组合时覆盖。
     protocol: Dict[str, str] = {
-        "precision_answer": "<The exact option letter/index of the final answer, e.g. 'A' or '1' or 'True'>",
+        "precision_answer": "<The exact option letter/index/word of the final answer, e.g. 'A' or '1' or 'True'>",
     }
     
     def default_compare(

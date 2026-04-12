@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -160,9 +160,10 @@ async def run_workflow(config: RunConfigPayload):
     # 建立一条协程间通信的消息队列
     queue = asyncio.Queue()
 
-    # 为每次执行生成独立的结果目录
+    # 为工作流配置前端可见的时间戳
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(AppSettings.RESULT_DIR, ts)
+    # 让存储服务进行单目录覆写以释放硬盘
+    run_dir = StorageService.init_run_dir()
 
     async def workflow_runner():
         """执行流的具体后台任务。"""
@@ -273,7 +274,31 @@ async def run_workflow(config: RunConfigPayload):
             "Connection": "keep-alive",
             # 为了防止某些浏览器/代理默认缓冲，开启以下选项
             "X-Accel-Buffering": "no",
-        }
+        },
+    )
+
+
+@app.get("/api/download/latest-report")
+async def download_latest_report():
+    """
+    获取最新的测试报告文件夹并打包为 zip 格式返回。
+    
+    业务逻辑委托给了 StorageService 的 get_latest_report_zip 方法。
+    """
+    try:
+        zip_buffer, dir_name = StorageService.get_latest_report_zip()
+    except Exception as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e),
+        )
+    
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="report_{dir_name}.zip"',
+        },
     )
 
 

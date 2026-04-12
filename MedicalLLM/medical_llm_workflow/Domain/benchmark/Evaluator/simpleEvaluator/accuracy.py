@@ -23,7 +23,7 @@ class AccuracyEvaluator(BaseEvaluator):
     
     # 指定 llm 用于评测的输出格式，方便后续自动评测脚本解析结果。
     protocol: Dict[str, str] = {
-        "accuracy_answer": "<The exact option letter/index of the final answer, e.g. 'A' or '1' or 'True'>",
+        "accuracy_answer": "<The exact option letter/index/word of the final answer, e.g. 'A' or '1' or 'True'>",
     }
 
     def default_compare(

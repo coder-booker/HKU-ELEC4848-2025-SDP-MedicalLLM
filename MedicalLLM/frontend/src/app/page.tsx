@@ -443,6 +443,11 @@ export default function Home() {
     setSelectedQuestion(null);
   };
 
+  const handleDownloadLatestReport = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.location.href = "http://localhost:8000/api/download/latest-report";
+  };
+
   const hasFailedQuestion = workflowState.questions.some(q => q.status === "failed");
   const isWorkflowError = !!error;
   const isFailure = hasFailedQuestion || isWorkflowError;
@@ -674,8 +679,21 @@ export default function Home() {
         {/* 最终评估报告折叠面板 */}
         {(hasRun || isRunning) && (
           <details className="group bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100" open={evaluationData && evaluationData.length > 0}>
-            <summary className="px-6 py-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-800 cursor-pointer select-none hover:bg-gray-100 transition-colors">
-              Final Evaluation Report
+            <summary className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center cursor-pointer select-none hover:bg-gray-100 transition-colors">
+              <span className="font-bold text-gray-800">Final Evaluation Report</span>
+              {hasRun && (
+                <button
+                  type="button"
+                  onClick={handleDownloadLatestReport}
+                  className="px-4 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-md shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 flex items-center justify-center gap-2"
+                  title="Download the latest evaluation report folder as ZIP"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download Report (.zip)
+                </button>
+              )}
             </summary>
 
             <div className="p-6 overflow-y-auto max-h-[70vh]">

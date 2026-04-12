@@ -34,8 +34,11 @@ DEFAULT_DATASET_CONFIG = [
     ),
     DatasetConfig(
         dataset_type=DatasetType.PUBMED,
-        num_of_questions=2,
-        evaluator_type_list=[EvaluatorType.ACCURACY],
+        num_of_questions=1,
+        evaluator_type_list=[
+            EvaluatorType.ACCURACY,
+            EvaluatorType.PRECISION,
+        ],
     ),
 ]
 

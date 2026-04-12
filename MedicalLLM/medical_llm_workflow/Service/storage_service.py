@@ -6,7 +6,10 @@
 
 import os
 import json
-from typing import Any, Dict, Optional
+import shutil
+import io
+import zipfile
+from typing import Any, Dict, Optional, Tuple
 
 from medical_llm_workflow.app_settings import AppSettings
 
@@ -120,15 +123,52 @@ class StorageService:
         return report_path
         
     @staticmethod
-    def read_evaluation_report(
-        run_dir: str,
-    ) -> str:
-        """读取总结性的评测报告内容。"""
-        report_path = os.path.join(
-            run_dir,
-            AppSettings.EVALUATION_REPORT_FILENAME,
-        )
-        if os.path.exists(report_path):
-            with open(report_path, "r", encoding="utf-8") as f:
-                return f.read()
-        return ""
+    def init_run_dir() -> str:
+        """
+        初始化工作流输出目录。
+        采用单文件夹覆写模式（latest_run），每次运行前删除旧数据，
+        以节省低配容器环境下的磁盘空间。
+        
+        Returns:
+            str: 最新生成的工作流目录路径
+        """
+        results_dir = AppSettings.RESULT_DIR
+        new_dir = os.path.join(results_dir, "latest_run")
+        
+        if os.path.exists(new_dir):
+            shutil.rmtree(new_dir)
+            
+        os.makedirs(new_dir, exist_ok=True)
+        return new_dir
+
+    @staticmethod
+    def get_latest_report_zip() -> Tuple[io.BytesIO, str]:
+        """
+        获取最后的运行文件夹数据打包。
+        
+        由于已采用单文件夹覆写模式，此文件夹固定为 latest_run。
+        
+        Returns:
+            ZIP 缓冲区 (io.BytesIO) 和文件名标题 (str) 的元组
+        """
+        results_dir: str = AppSettings.RESULT_DIR
+        latest_dir: str = os.path.join(results_dir, "latest_run")
+        
+        if not os.path.exists(latest_dir):
+            raise FileNotFoundError("Results directory not found. Have you started any workflow?")
+            
+        dir_name: str = "latest_run"
+        
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for root, _, files in os.walk(latest_dir):
+                for file in files:
+                    file_path: str = os.path.join(root, file)
+                    rel_path: str = os.path.relpath(file_path, latest_dir)
+                    zip_file.write(
+                        file_path,
+                        arcname=rel_path,
+                    )
+                    
+        zip_buffer.seek(0)
+        return zip_buffer, dir_name
