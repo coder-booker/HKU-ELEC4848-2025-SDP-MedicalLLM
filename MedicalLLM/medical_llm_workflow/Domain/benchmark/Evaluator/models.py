@@ -12,6 +12,7 @@ class EvaluatorType(str, Enum):
     """内置评估器类型。"""
 
     ACCURACY = "accuracy"
+    PRECISION = "precision"
 
 class EvaluationSample(TypedDict):
     """
@@ -35,6 +36,7 @@ class EvaluatorDisplayType(str, Enum):
 
 EVALUATOR_DISPLAY_MAP = {
     "accuracy_evaluator": EvaluatorDisplayType.PERCENTAGE.value,
+    "precision_evaluator": EvaluatorDisplayType.PERCENTAGE.value,
     "base_evaluator": EvaluatorDisplayType.BAR_CHART.value,
 }
 
@@ -49,8 +51,8 @@ class EvluationRecord(TypedDict):
 
     # sample_id: str
     score: float
-    prediction: Any
-    ground_truth: Any
+    prediction: Dict[str, Any]
+    ground_truth: Dict[str, Any]
     detail: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 

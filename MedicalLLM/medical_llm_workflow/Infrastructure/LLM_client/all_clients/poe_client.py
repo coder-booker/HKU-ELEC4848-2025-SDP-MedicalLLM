@@ -12,7 +12,7 @@ import asyncio
 from medical_llm_workflow.schemas.models import ConversationMessage
 from ..base_client import BaseLLMClient
 from ..models import PoeChatbotConfig
-from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.app_settings import AppSettings
 from medical_llm_workflow.utils import print_log
 
 
@@ -25,7 +25,7 @@ class PoeClient(BaseLLMClient):
     
     def __init__(self):
         key_name = f"{PoeClient.client_name.upper()}_KEY"
-        self.api_key = Secrets.POE_KEY
+        self.api_key = AppSettings.POE_KEY
         # print_log(f"Initialized PoeClient with API key from env var '{key_name}'", prefix="[LLM]", debug=True)
 
     async def call_chatbot(
@@ -55,7 +55,7 @@ class PoeClient(BaseLLMClient):
 
         # 调用 Poe API
         chunks = []
-        if not Secrets.REAL_LLM_RESPONSE:
+        if not AppSettings.REAL_LLM_RESPONSE:
             # fake response for debug
             chunks.append("This")
             chunks.append(" is")

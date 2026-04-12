@@ -8,7 +8,7 @@ import os
 import json
 from typing import Any, Dict, Optional
 
-from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.app_settings import AppSettings
 
 
 class StorageService:
@@ -22,7 +22,7 @@ class StorageService:
     ) -> Optional[Dict[str, Any]]:
         """读取指定题目运行的结构化 JSON 日志。"""
         json_path = os.path.join(
-            Secrets.RESULT_DIR,
+            AppSettings.RESULT_DIR,
             run_id,
             dataset_type,
             f"question_{question_index}.json",
@@ -79,7 +79,7 @@ class StorageService:
         """追加或覆盖写入工作流的全局运行日志。"""
         log_path = os.path.join(
             run_dir,
-            Secrets.WORKFLOW_LOG_FILENAME,
+            AppSettings.WORKFLOW_LOG_FILENAME,
         )
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         # 根据传入标志选用覆写或是追加
@@ -95,7 +95,7 @@ class StorageService:
         """读取工作流全局运行日志内容。"""
         log_path = os.path.join(
             run_dir,
-            Secrets.WORKFLOW_LOG_FILENAME,
+            AppSettings.WORKFLOW_LOG_FILENAME,
         )
         if os.path.exists(log_path):
             with open(log_path, "r", encoding="utf-8") as f:
@@ -110,7 +110,7 @@ class StorageService:
         """写入总结性的 Markdown 评测报告并返回路径。"""
         report_path = os.path.join(
             run_dir,
-            Secrets.EVALUATION_REPORT_FILENAME,
+            AppSettings.EVALUATION_REPORT_FILENAME,
         )
         os.makedirs(run_dir, exist_ok=True)
         
@@ -126,7 +126,7 @@ class StorageService:
         """读取总结性的评测报告内容。"""
         report_path = os.path.join(
             run_dir,
-            Secrets.EVALUATION_REPORT_FILENAME,
+            AppSettings.EVALUATION_REPORT_FILENAME,
         )
         if os.path.exists(report_path):
             with open(report_path, "r", encoding="utf-8") as f:

@@ -9,10 +9,11 @@ F1: 精确率和召回率的调和平均数 。
 
 AUC / AUPR: 接收者操作特征曲线（ROC）和精确率-召回率曲线下的面积，反映模型在不同阈值下的综合分类能力 。
 
-Top-k 系列 (Accuracy/Precision/Recall): 评估模型的“前 $k$ 个输出”中是否包含真实标签，用于多疾病鉴别诊断（DDx）场景 。
 
 
 短答/推理过程
+Top-k 系列 (Accuracy/Precision/Recall): 评估模型的“前 $k$ 个输出”中是否包含真实标签，用于多疾病鉴别诊断（DDx）场景 。
+
 Correctness (正确性): 响应在医学专业知识层面是否正确 。
 
 Consistency (一致性): 回复的内容与Ground-truth输入信息是否保持一致，无自相矛盾 。

@@ -22,11 +22,11 @@ from .models import (
     EVALUATOR_DISPLAY_MAP,
     EvaluatorDisplayType
 )
-from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.app_settings import AppSettings
 import os
 
-DEFAULT_REPORT_PATH = os.path.join(Secrets.RESULT_DIR, Secrets.EVALUATION_REPORT_FILENAME)
-DEFAULT_CHART_PATH = os.path.join(Secrets.RESULT_DIR, Secrets.EVALUATION_CHART_FILENAME)
+DEFAULT_REPORT_PATH = os.path.join(AppSettings.RESULT_DIR, AppSettings.EVALUATION_REPORT_FILENAME)
+DEFAULT_CHART_PATH = os.path.join(AppSettings.RESULT_DIR, AppSettings.EVALUATION_CHART_FILENAME)
 
 CompareFn = Callable[[Any, Any, Dict[str, Any]], float]
 
@@ -56,63 +56,49 @@ class BaseEvaluator(ABC):
         return raw_prediction
 
     def _build_summary(self, records: List[EvluationRecord]) -> Dict[str, Any]:
-        """构建默认摘要。"""
-        hit_count = sum(1 for r in records if r["score"] >= 1.0)
+        """
+        构建默认摘要信息。
+        
+        基类仅负责提供与具体指标计算无关的元数据（如样本总数）。
+        更细节的计算（如命中数、精确率等）全交由具体 Evaluator 负责补充。
+        """
         return {
-            "hit_count": hit_count,
-            "hit_rate": (hit_count / len(records)) if records else 0.0,
+            "total_samples": len(records),
         }
 
-    def build_chart_mermaid(self, result: EvluationBatchResult) -> str:
-        """生成 Mermaid 条形图（文本）。"""
-        avg = round(result["average_score"], 4)
-        min_v = round(result["min_score"], 4)
-        max_v = round(result["max_score"], 4)
-
-        return (
-            "xychart-beta\n"
-            f'    title "{result["metric_name"]} summary"\n'
-            '    x-axis ["average", "min", "max"]\n'
-            '    y-axis "score" 0 --> 1\n'
-            f"    bar [{avg}, {min_v}, {max_v}]\n"
-        )
+    def build_chart_data(self, result: EvluationBatchResult) -> Dict[str, Any]:
+        """为前端提供图表所需的数据结构。"""
+        # 前端使用 Recharts 或者自定义图表时，直接提供这组 JSON 结构即可。
+        return {
+            "title": f"{result['metric_name']} summary",
+            "xAxis": ["average", "min", "max"],
+            "yAxisLabel": "score",
+            "yAxisRange": [0, 1],
+            "series": [
+                {"name": "average", "value": round(result["average_score"], 4)},
+                {"name": "min", "value": round(result["min_score"], 4)},
+                {"name": "max", "value": round(result["max_score"], 4)},
+            ]
+        }
 
     def build_report_markdown(self, result: EvluationBatchResult) -> str:
-        """生成 Markdown 报告内容。"""
+        """生成 Markdown 报告内容。不再内嵌 mermaid 纯文本逻辑。"""
         lines: List[str] = []
         lines.append(f"# Evaluation Report - {result['evaluator_name']}")
         lines.append("")
         lines.append(f"- Metric: {result['metric_name']}")
-        lines.append(f"- Total Samples: {result.total_samples}")
+        lines.append(f"- Total Samples: {result['total_samples']}")
         lines.append(f"- Average Score: {result['average_score']:.4f}")
         lines.append(f"- Min Score: {result['min_score']:.4f}")
         lines.append(f"- Max Score: {result['max_score']:.4f}")
         # lines.append(f"- Params: {result.params}")
         lines.append("")
 
-        lines.append("## Summary")
         lines.append("")
-        for key, value in result["summary"].items():
+        for key, value in result.get("summary", {}).items():
             lines.append(f"- {key}: {value}")
         lines.append("")
 
-        lines.append("## Score Distribution")
-        lines.append("")
-        lines.append("```mermaid")
-        lines.append(self.build_chart_mermaid(result).rstrip())
-        lines.append("```")
-        lines.append("")
-
-        lines.append("## Per Sample")
-        lines.append("")
-        lines.append("| sample_id | score | prediction | ground_truth |")
-        lines.append("|---|---:|---|---|")
-        for record in result["records"]:
-            lines.append(
-                f"| {record['score']:.4f} | {record['prediction']} | {record['ground_truth']} |"
-            )
-
-        lines.append("")
         return "\n".join(lines)
     
     
@@ -179,9 +165,9 @@ class BaseEvaluator(ABC):
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(report_text)
             
-        chart_text = self.build_chart_mermaid(result)
-        with open(chart_path, "w", encoding="utf-8") as f:
-            f.write(chart_text)
+        chart_data = self.build_chart_data(result)
+        # 不再通过 chart_text 写文本图表
+        # with open(chart_path, "w", encoding="utf-8") as f: ...
         
         artifacts: EvaluationArtifacts = {
             "report_path": report_path,

@@ -54,12 +54,14 @@ class EvaluationResultItemForReport(TypedDict):
     """
     - evaluator_name: str - 评测器名称
     - result: Dict[str, Any] - 评测结果数据
-    - chart_text: str - 评测结果对应的图表文本（如 mermaid 格式）
+    - chart_data: Dict[str, Any] - 提供给前端直接可用的图形图表数据结构
+    - report_text: str - 评测器自身生成的报告内容
     """
 
     evaluator_name: str
     result: EvluationBatchResult
-    chart_text: str
+    chart_data: Dict[str, Any]
+    report_text: str
 
 
 class Workflow:
@@ -191,15 +193,19 @@ class Workflow:
             evaluation_result = evaluator.evaluate_batch(
                 sample_list=evaluation_sample_list,
             )
-            chart_text = evaluator.build_chart_mermaid(
+            chart_data = evaluator.build_chart_data(
                 evaluation_result,
-            ).rstrip()
+            )
+            report_text = evaluator.build_report_markdown(
+                evaluation_result,
+            )
 
             evaluation_result_list.append(
                 {
                     "evaluator_name": evaluator_type.value,
                     "result": evaluation_result,
-                    "chart_text": chart_text,
+                    "chart_data": chart_data,
+                    "report_text": report_text,
                 },
             )
 
@@ -408,9 +414,9 @@ class Workflow:
         dataset_inlet_item_list: List[DatasetInletItem],
     ) -> Dict[str, Any]:
         
-         # 所有 evaluator 都结束后，再融合成一份总报告。
+        # 所有 evaluator 都结束后，再融合成一份总报告。
         merged_report_lines: List[str] = []
-        merged_report_lines.append("# Evaluation Report")
+        merged_report_lines.append("# Comprehensive Evaluation Report")
         merged_report_lines.append("")
         merged_report_lines.append(f"- Total Evaluators: {len(evaluation_result_list)}")
         
@@ -422,31 +428,11 @@ class Workflow:
         for evaluation_item in evaluation_result_list:
             evaluator_name = evaluation_item["evaluator_name"]
             evaluation_result = evaluation_item["result"]
-            chart_text = evaluation_item["chart_text"]
-
-            merged_report_lines.append(f"## Evaluator: {evaluator_name}")
-            merged_report_lines.append("")
-            merged_report_lines.append(f"- Metric: {evaluation_result['metric_name']}")
-            merged_report_lines.append(f"- Total Samples: {evaluation_result['total_samples']}")
-            merged_report_lines.append(f"- Average Score: {evaluation_result['average_score']:.4f}")
-            merged_report_lines.append(f"- Min Score: {evaluation_result['min_score']:.4f}")
-            merged_report_lines.append(f"- Max Score: {evaluation_result['max_score']:.4f}")
-            merged_report_lines.append("")
-
-            merged_report_lines.append("### Summary")
-            merged_report_lines.append("")
-            for summary_key, summary_value in evaluation_result["summary"].items():
-                merged_report_lines.append(f"- {summary_key}: {summary_value}")
-            merged_report_lines.append("")
-
-            merged_report_lines.append("### Score Distribution")
-            merged_report_lines.append("")
-            merged_report_lines.append("```mermaid")
-            merged_report_lines.append(chart_text)
-            merged_report_lines.append("```")
-            merged_report_lines.append("")
+            report_text = evaluation_item["report_text"]
             
-            merged_report_lines.append("### Details")
+            merged_report_lines.append(report_text)
+            
+            merged_report_lines.append("### Details with Questions (Workflow Level)")
             merged_report_lines.append("")
             for idx, record in enumerate(evaluation_result["records"]):
                 # 提取对应题目并截取前 100 个字符保证简洁

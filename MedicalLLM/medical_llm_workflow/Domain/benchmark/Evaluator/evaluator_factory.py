@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Optional
 
 from .base_evaluator import BaseEvaluator
 from .simpleEvaluator.accuracy import AccuracyEvaluator
+from .simpleEvaluator.precision import PrecisionEvaluator
 from .models import EvaluatorType
 
 
@@ -13,6 +14,7 @@ class EvaluatorFactory:
 
     _registry: Dict[EvaluatorType, type[BaseEvaluator]] = {
         EvaluatorType.ACCURACY: AccuracyEvaluator,
+        EvaluatorType.PRECISION: PrecisionEvaluator,
     }
 
     @classmethod

@@ -10,7 +10,7 @@ from typing import List
 import datetime
 
 from medical_llm_workflow.main import run_core_workflow, DEFAULT_CHATBOT_CONFIG
-from medical_llm_workflow.utils import sse_queue_var, run_dir_var, emit_event
+from medical_llm_workflow.utils import sse_queue_var, run_dir_var, emit_event, print_log
 
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetConfig
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
@@ -18,7 +18,7 @@ from medical_llm_workflow.Domain.tasks import TaskConfig
 from medical_llm_workflow.Infrastructure.LLM_client.models import ChatbotType, PoeChatbotModel
 from medical_llm_workflow.Domain.recipes.models import RecipeType
 from medical_llm_workflow.Domain.recipes.recipe_factory import RecipeFactory
-from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.app_settings import AppSettings
 from medical_llm_workflow.Service.storage_service import StorageService
 
 
@@ -69,6 +69,7 @@ class RunConfigPayload(BaseModel):
 @app.get("/api/options")
 async def get_workflow_options():
     """提供给前端所有可用的工作流配置选项，包含解析完成的 Recipe"""
+    print_log("Received request for workflow options.", prefix="[API /api/options]", debug=True)
     
     # 构建基础默认的 LLM 配置，用于实例化默认 Recipe 任务
     recipes_list = []
@@ -87,13 +88,16 @@ async def get_workflow_options():
             "tasks": [t.model_dump(exclude_none=True) for t in task_configs],
         })
 
-    return {
+    response_body = {
         "datasets": [{"label": e.name, "value": e.value} for e in DatasetType],
         "evaluators": [{"label": e.name, "value": e.value} for e in EvaluatorType],
         "chatbotTypes": [{"label": e.name, "value": e.value} for e in ChatbotType],
         "models": [{"label": e.name, "value": e.value} for e in PoeChatbotModel if e != PoeChatbotModel.EMPTY_MODEL],
         "recipes": recipes_list,
     }
+    
+    print_log(f"Response for /api/options:\n{json.dumps(response_body, indent=2, ensure_ascii=False)}", prefix="[API /api/options]", debug=True)
+    return response_body
 
 
 @app.get("/api/results/{run_id}/{dataset_type}/{question_index}")
@@ -106,6 +110,7 @@ async def get_question_result(
     提供给前端的 API 接口。
     用于在点击题目列表项后，从指定的运行记录文件夹中读取某道题目的结构化 JSON 日志数据。
     """
+    print_log(f"Received request for details: run_id={run_id}, dataset_type={dataset_type}, question_index={question_index}", prefix="[API /api/results]", debug=True)
     
     data = StorageService.read_question_json(
         run_id=run_id,
@@ -115,8 +120,11 @@ async def get_question_result(
     
     # 检查题目数据文件是否存在，如果不存在直接抛出 404
     if data is None:
-        return {"error": "Result not found"}, 404
+        error_resp = {"error": "Result not found"}
+        print_log(f"Response for /api/results: {error_resp} (404)", prefix="[API /api/results]", debug=True)
+        return error_resp, 404
         
+    print_log(f"Response for /api/results: Successfully returning structured data. (Payload omitted for brevity)", prefix="[API /api/results]", debug=True)
     return data
 
 @app.post("/api/run")
@@ -126,13 +134,14 @@ async def run_workflow(config: RunConfigPayload):
     通过 Server-Sent Events (SSE) 向前端实时反馈控制台所生成的日志，
     并在最后一并返回评估报告和纯净工作流 md 文件。
     """
+    print_log(f"Received request to run workflow. Body:\n{json.dumps(config.model_dump(), indent=2, ensure_ascii=False)}", prefix="[API /api/run]", debug=True)
     
     # 建立一条协程间通信的消息队列
     queue = asyncio.Queue()
 
     # 为每次执行生成独立的结果目录
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(Secrets.RESULT_DIR, ts)
+    run_dir = os.path.join(AppSettings.RESULT_DIR, ts)
 
     async def workflow_runner():
         """执行流的具体后台任务。"""
@@ -173,8 +182,8 @@ async def run_workflow(config: RunConfigPayload):
             )
             
             # Workflow 执行完后，统一组装返回
-            eval_report_path = os.path.join(run_dir, Secrets.EVALUATION_REPORT_FILENAME)
-            workflow_log_path = os.path.join(run_dir, Secrets.WORKFLOW_LOG_FILENAME)
+            eval_report_path = os.path.join(run_dir, AppSettings.EVALUATION_REPORT_FILENAME)
+            workflow_log_path = os.path.join(run_dir, AppSettings.WORKFLOW_LOG_FILENAME)
             
             eval_content = ""
             if os.path.exists(eval_report_path):
@@ -193,6 +202,8 @@ async def run_workflow(config: RunConfigPayload):
                 "workflow_log": log_content,
                 "evaluation_data": report_info["results"] if report_info else None,
             }
+            
+            print_log(f"Workflow completely done. Emitting [DONE] payload buffer: {json.dumps(final_payload)[:500]}...", prefix="[API Response /api/run]", debug=True)
             await queue.put(f"[DONE] {json.dumps(final_payload)}")
             
         except Exception as e:
@@ -200,6 +211,7 @@ async def run_workflow(config: RunConfigPayload):
                 "status": "ERROR",
                 "message": str(e),
             }
+            print_log(f"Workflow error. Emitting ERROR payload: {json.dumps(error_payload)}", prefix="[API Response /api/run]", debug=True)
             await queue.put(f"[DONE] {json.dumps(error_payload)}")
         finally:
             sse_queue_var.reset(token)

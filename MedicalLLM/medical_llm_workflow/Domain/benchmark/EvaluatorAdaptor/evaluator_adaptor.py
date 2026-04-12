@@ -11,11 +11,18 @@ from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType
 from medical_llm_workflow.Domain.benchmark.Dataset import BaseNormalizedQuestion
 
 
+# 将 dataset 的 protocol 映射到 evaluator 需要的字段，形成一个适配器，方便 evaluator 进行评测。
 # 考虑了 dataset 种类的 evaluator 种类的二维 mapping
 # dataset 必须用一个额外的 map 来适配 evaluator
 DATASET_EVALUATOR_SCHEMA_MAP = {
     DatasetType.MED_QA: {
-        EvaluatorType.ACCURACY: ["ground_truth", "answer"],
+        # accuracy evaluator 用以测评的字段是 'accuracy_answer'。对于 MED_QA 数据集，这个 'accuracy_answer' 就是 'ground_truth' 字段
+        EvaluatorType.ACCURACY: ["ground_truth", "accuracy_answer"],
+        EvaluatorType.PRECISION: ["ground_truth", "precision_answer"],
+    },
+    DatasetType.PUBMED: {
+        EvaluatorType.ACCURACY: ["ground_truth", "accuracy_answer"],
+        EvaluatorType.PRECISION: ["ground_truth", "precision_answer"],
     },
 }
 
@@ -47,7 +54,7 @@ class EvaluatorAdaptor:
         dataset_json_question: BaseNormalizedQuestion,
         evaluator_type_list: List[EvaluatorType],
     ) -> Dict[str, str]:
-        """根据 dataset 类型和 evaluator 列表，获取 dataset 中的金标答案，并适配为 evaluator 需要的格式以方便 evaluator 进行评估。"""
+        """根据 dataset 类型和 evaluator 列表，获取 dataset 中的金标答案，并适配为 evaluator 需要的格式以方便 evaluator 对比 llm 的预测进行评估。"""
         result_dict: Dict[str, str] = {} # 应该和 evaluation_schema 的 key 一一对应
         for evaluator_type in evaluator_type_list:
             dataset_key, evaluator_key = DATASET_EVALUATOR_SCHEMA_MAP[dataset_type][evaluator_type]

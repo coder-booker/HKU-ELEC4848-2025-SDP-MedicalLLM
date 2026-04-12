@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from medical_llm_workflow.Domain.workflow_context.models import WorkflowContextPort
 
-from medical_llm_workflow.serect import Secrets
+from medical_llm_workflow.app_settings import AppSettings
 from medical_llm_workflow.Service.storage_service import StorageService
 
 
@@ -15,7 +15,7 @@ _IS_LOG_INITIALIZED = False
 # 全局上下文变量：承载针对单一工作流运行生命周期的 SSE 队列
 sse_queue_var: ContextVar[asyncio.Queue | None] = ContextVar("sse_queue", default=None)
 # 全局上下文变量：承载针对单一工作流运行的独立输出目录
-run_dir_var: ContextVar[str] = ContextVar("run_dir", default=Secrets.RESULT_DIR)
+run_dir_var: ContextVar[str] = ContextVar("run_dir", default=AppSettings.RESULT_DIR)
 
 def get_run_dir() -> str:
     return run_dir_var.get()
@@ -65,7 +65,7 @@ def print_log(message: Any, prefix: str = "", debug: bool = False) -> None:
     如果信息是多行也会统一前缀。
     """
     global _IS_LOG_INITIALIZED
-    # if debug and not getattr(Secrets, "DEBUG", False):
+    # if debug and not getattr(AppSettings, "DEBUG", False):
     #     return
 
     # 将非字符串类型转换为字符串以进行替换
@@ -78,7 +78,7 @@ def print_log(message: Any, prefix: str = "", debug: bool = False) -> None:
     msg_str = msg_str.replace("\\", "")
     
     # 提取无前缀纯文本以供 Markdown 文件渲染使用
-    if debug and Secrets.DEBUG:
+    if debug and AppSettings.DEBUG:
         print(msg_str)
     
     # 根据是否有前缀进行排版处理

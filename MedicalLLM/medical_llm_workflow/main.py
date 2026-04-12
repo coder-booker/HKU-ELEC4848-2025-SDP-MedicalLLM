@@ -65,7 +65,7 @@ async def run_core_workflow(
         print_log("Running workflow...", prefix="[WORKFLOW]", debug=True)
         return await workflow.run()
     except Exception as e:
-        print_log(f"Error occurred: {e}\n{traceback.format_exc()}", prefix="[WORKFLOW]", debug=True)
+        print_log(f"Error occurred: {e}\n{traceback.print_exc()}", prefix="[WORKFLOW]", debug=True)
         raise
 
 
