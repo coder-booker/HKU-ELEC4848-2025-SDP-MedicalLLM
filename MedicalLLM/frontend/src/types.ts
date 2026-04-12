@@ -40,10 +40,11 @@ export type QuestionStatus = {
 
 export type Option = { label: string; value: string };
 
+export type DatasetOption = Option & { supportedEvaluators: string[] };
 export type RecipeOption = Option & { tasks: TaskConfig[] };
 
 export type OptionsState = {
-  datasets: Option[];
+  datasets: DatasetOption[];
   evaluators: Option[];
   chatbotTypes: Option[];
   models: Option[];
@@ -65,3 +66,50 @@ export type WorkflowState = {
   totalQuestions: number;
   tasks: Record<string, TaskState>;
 };
+
+// ============================================================================
+// Evaluation Types (Frontend-Backend Shared Protocol)
+// ============================================================================
+
+export type EvaluationRecord = {
+  score: number,
+  prediction: Record<string, any>,
+  ground_truth: Record<string, any>,
+  detail?: Record<string, any>,
+};
+
+export type AccuracySummary = {
+  total_samples: number,
+  hit_count: number,
+  miss_count: number,
+  accuracy: number,
+};
+
+export type PrecisionSummary = {
+  total_samples: number,
+  macro_precision: number,
+  precision_per_class: Record<string, number>,
+};
+
+export type EvaluatorSummary = AccuracySummary | PrecisionSummary | Record<string, any>;
+
+export type EvluationBatchResult<T extends EvaluatorSummary = Record<string, any>> = {
+  evaluator_name: string,
+  display_type: string,
+  metric_name: string,
+  total_samples: number,
+  average_score: number,
+  min_score: number,
+  max_score: number,
+  records: EvaluationRecord[],
+  summary: T,
+};
+
+export type EvaluationRunOutput<T extends EvaluatorSummary = Record<string, any>> = {
+  dataset_type: string,
+  evaluator_name: string,
+  result: EvluationBatchResult<T>,
+  chart_data: Record<string, any>,
+  report_text: string,
+};
+

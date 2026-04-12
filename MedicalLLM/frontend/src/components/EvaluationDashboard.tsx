@@ -1,91 +1,126 @@
-import React from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import React, { useState, useMemo } from "react";
 
+
+import { EvaluationRunOutput } from "../types";
+import { AccuracyDashboard } from "./dashboard/AccuracyDashboard";
+import { PrecisionDashboard } from "./dashboard/PrecisionDashboard";
+import { BaseDashboard } from "./dashboard/BaseDashboard";
+
+
+/**
+ * Evaluator Registry
+ * Statically maps known evaluator names from the backend to specialized React components.
+ */
+const EVALUATOR_MAP: Record<string, React.FC<{ result: any }>> = {
+  accuracy: AccuracyDashboard,
+  precision: PrecisionDashboard,
+  accuracy_evaluator: AccuracyDashboard,
+  precision_evaluator: PrecisionDashboard,
+};
+
+/**
+ * Props for the main Dashboard waterfall layout
+ */
 interface EvaluationDashboardProps {
-  evaluationData: any[];
+  evaluationData: EvaluationRunOutput[],
 }
 
+
+/**
+ * EvaluationDashboard
+ * Master container orchestrating all evaluator dashboards in a waterfall layout.
+ */
 export function EvaluationDashboard({ evaluationData }: EvaluationDashboardProps) {
+  // Use a state to manage visibly checked evaluators
+  const [hiddenEvaluators, setHiddenEvaluators] = useState<Record<string, boolean>>({});
+
   if (!evaluationData || evaluationData.length === 0) {
     return null;
   }
 
+  // Toggle utility: Flip boolean flag.
+  const toggleEvaluator = (evalName: string) => {
+    setHiddenEvaluators((prev) => ({
+      ...prev,
+      [evalName]: !prev[evalName],
+    }));
+  };
+
+  // Group evaluation data by dataset_type
+  const groupedData = useMemo(() => {
+    const map = new Map<string, EvaluationRunOutput[]>();
+    evaluationData.forEach((data) => {
+      const type = data.dataset_type || "Unknown Dataset";
+      if (!map.has(type)) {
+        map.set(type, []);
+      }
+      map.get(type)!.push(data);
+    });
+    return Array.from(map.entries());
+  }, [evaluationData]);
+
+  // Extract all unique evaluators across all datasets for the filter
+  const allEvaluatorNames = useMemo(() => {
+    return Array.from(new Set(evaluationData.map((d) => d.evaluator_name)));
+  }, [evaluationData]);
+
   return (
-    <div className="mb-8 flex flex-wrap gap-6">
-      {evaluationData.map((result: any, i: number) => {
-        const evalResult = result.result;
-        const summaryData = Object.entries(evalResult.summary).map(([k, v]) => ({
-          name: k,
-          count: v,
-        }));
-
-        if (evalResult.display_type === "percentage") {
+    <div className="mb-8 w-full flex flex-col gap-6">
+      {/* 
+        Filter Control Panel
+        Provides simple pill-buttons to switch specific dashboards on/off
+      */}
+      <div className="flex gap-3 mb-2 flex-wrap">
+        {allEvaluatorNames.map((evalName, idx) => {
+          const isHidden = hiddenEvaluators[evalName] || false;
+          
           return (
-            <div key={`eval-${i}`} className="w-80 flex flex-col p-6 bg-white rounded-xl border border-gray-100 shadow-sm relative">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-800 capitalize leading-tight">{result.evaluator_name.replace(/_/g, ' ')}</h3>
-                  <span className="text-xs text-gray-400">Score Dashboard</span>
-                </div>
-                <div className="bg-gray-50 text-gray-600 px-2.5 py-1 rounded text-xs font-medium border border-gray-100">
-                  {evalResult.total_samples} samples
-                </div>
-              </div>
-              
-              <div className="flex flex-col items-center justify-center flex-1 py-4">
-                <span className="text-5xl font-extrabold text-indigo-600 drop-shadow-sm">
-                  {(evalResult.average_score * 100).toFixed(2)}%
-                </span>
-                <div className="mt-6 flex gap-5 text-sm text-gray-500 font-medium">
-                   <div className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                      Correct: {evalResult.summary.hit_count || 0}
-                   </div>
-                   <div className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                      Incorrect: {evalResult.total_samples - (evalResult.summary.hit_count || 0)}
-                   </div>
-                </div>
-              </div>
-            </div>
+            <button
+              key={`filter-${idx}`}
+              onClick={() => toggleEvaluator(evalName)}
+              className={`
+                px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors
+                ${isHidden 
+                  ? "bg-gray-50 text-gray-400 border-gray-200" 
+                  : "bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm"
+                }
+              `}
+            >
+              {evalName.replace(/_/g, ' ')}
+            </button>
           );
-        }
+        })}
+      </div>
 
-        return (
-          <div key={`eval-${i}`} className="w-full border rounded-xl p-5 shadow-sm bg-white">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-800 capitalize">{result.evaluator_name.replace(/_/g, ' ')} Dashboard</h3>
-              <div className="flex gap-4">
-                <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg border border-blue-100 flex flex-col items-center">
-                  <span className="text-xs uppercase font-semibold">Total Samples</span>
-                  <span className="text-xl font-bold">{evalResult.total_samples}</span>
-                </div>
-                <div className="bg-green-50 text-green-800 px-4 py-2 rounded-lg border border-green-100 flex flex-col items-center">
-                  <span className="text-xs uppercase font-semibold">Avg Score</span>
-                  <span className="text-xl font-bold">{(evalResult.average_score * 100).toFixed(1)}%</span>
-                </div>
-              </div>
+      {/* 
+        Waterfall Output Flow
+        Renders the available sub-dashboards top-to-bottom if not hidden by toggle.
+        Grouped by dataset.
+      */}
+      <div className="flex flex-col gap-6 w-full">
+        {groupedData.map(([datasetType, datasetEvaluationData], idx) => (
+          <div key={`dataset-group-${idx}`} className="flex flex-col gap-4">
+            <h3 className="text-xl font-bold border-b pb-2 capitalize tracking-wide">{datasetType.replace(/_/g, ' ')}</h3>
+            <div className="flex flex-wrap gap-6 w-full items-start content-start">
+              {datasetEvaluationData.map((data, i) => {
+                const evalResult = data.result;
+                const evalName = data.evaluator_name;
+                
+                if (hiddenEvaluators[evalName]) {
+                  return null;
+                }
+
+                // Fallback to BaseDashboard if current evaluator is unmapped
+                const RenderComponent = EVALUATOR_MAP[evalName] || BaseDashboard;
+
+                return (
+                  <RenderComponent key={`eval-${idx}-${i}`} result={evalResult} />
+                );
+              })}
             </div>
-
-            {summaryData.length > 0 && (
-              <div className="w-full h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={summaryData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6B7280', fontSize: 12}} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#6B7280', fontSize: 12}} />
-                    <Tooltip
-                      cursor={{fill: '#F3F4F6'}}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                    />
-                    <Bar dataKey="count" fill="#4F46E5" radius={[4, 4, 0, 0]} maxBarSize={60} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }

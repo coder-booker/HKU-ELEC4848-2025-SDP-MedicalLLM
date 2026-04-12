@@ -84,7 +84,7 @@ class BaseEvaluator(ABC):
     def build_report_markdown(self, result: EvluationBatchResult) -> str:
         """生成 Markdown 报告内容。不再内嵌 mermaid 纯文本逻辑。"""
         lines: List[str] = []
-        lines.append(f"# Evaluation Report - {result['evaluator_name']}")
+        lines.append(f"## Evaluation Report - {result['evaluator_name']}")
         lines.append("")
         lines.append(f"- Metric: {result['metric_name']}")
         lines.append(f"- Total Samples: {result['total_samples']}")

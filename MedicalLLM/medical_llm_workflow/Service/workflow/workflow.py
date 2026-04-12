@@ -52,12 +52,14 @@ class DatasetInletItem(BaseModel):
 
 class EvaluationResultItemForReport(TypedDict):
     """
+    - dataset_type: str - 数据集类型
     - evaluator_name: str - 评测器名称
     - result: Dict[str, Any] - 评测结果数据
     - chart_data: Dict[str, Any] - 提供给前端直接可用的图形图表数据结构
     - report_text: str - 评测器自身生成的报告内容
     """
 
+    dataset_type: str
     evaluator_name: str
     result: EvluationBatchResult
     chart_data: Dict[str, Any]
@@ -73,7 +75,6 @@ class Workflow:
         name: str = "Default Workflow Name",
         task_config_list: List[TaskConfig] = [],
         dataset_config_list: List[DatasetConfig] = [],
-        evaluator_type_list: List[EvaluatorType] = [],
         # language: LanguageType = LanguageType.EN # 整条工作流的语言
     ):
         """保存工作流配置并初始化上下文容器。"""
@@ -83,7 +84,6 @@ class Workflow:
         # 避免外部列表引用导致运行中被意外修改。
         self.task_config_list = list(task_config_list)
         self.dataset_config_list = list(dataset_config_list)
-        self.evaluator_type_list = list(evaluator_type_list)
 
         self.workflow_context = WorkflowContext(
             workflow_id=self.id,
@@ -138,10 +138,14 @@ class Workflow:
                 extractor_chatbot_config = task_config.chatbot_config
                 break
 
+        all_evaluator_types = set()
+        for dataset_config in self.dataset_config_list:
+            all_evaluator_types.update(dataset_config.evaluator_type_list)
+
         extractor_task_config = SmartExtractorTaskConfig(
             id="smart_extractor",
             chatbot_config=extractor_chatbot_config,
-            evaluator_type_list=self.evaluator_type_list.copy(),
+            evaluator_type_list=list(all_evaluator_types),
             input_msg_sources=['question_task'],
         )
 
@@ -152,70 +156,72 @@ class Workflow:
         all_workflow_contexts: List[WorkflowContext],
         dataset_inlet_item_list: List[DatasetInletItem],
     ) -> List[EvaluationResultItemForReport]:
-        """执行全部 evaluator，并在最后融合输出一份统一报告。"""
-        # print_log("=== Evaluation Results ===", prefix="[EVALUATOR]", debug=True)
-        evaluation_schema = EvaluatorAdaptor.build_expected_schema(self.evaluator_type_list)
-
-        evaluation_sample_list: List[EvaluationSample] = []
-        # 每个 workflow_context 对应一道题目，也就是一个 sample
-        # 对每个 workflow_context 都从 extractor 的结构化输出读取 prediction，再和 dataset 金标答案组评测 sample。
-        for index, workflow_context in enumerate(all_workflow_contexts):
-            # 收集 dataset 的题目，将其中答案并适配到当前 evaluator 需要的格式，供后续 evaluate 使用
-            dataset_inlet_item = dataset_inlet_item_list[index]
-            dataset_ground_truth_dict = EvaluatorAdaptor.parse_dataset_question_to_evaluator_schema(
-                dataset_type=dataset_inlet_item.dataset_type,
-                dataset_json_question=dataset_inlet_item.json_question,
-                evaluator_type_list=self.evaluator_type_list,
-            )
-
-            # 收集 llm 的结构化输出并适配到当前 evaluator 需要的格式
-            # 最后一个 task record 应该是 SmartExtractorTask，读取其结构化输出作为 prediction。
-            final_task_record = workflow_context.get_last_task_record()
-            final_output_message_content = final_task_record["task_context"]["output"][-1]["content"]
-            llm_output_dict = EvaluatorAdaptor.parse_extracted_data_to_evaluator_schema(
-                text_json_response=final_output_message_content,
-                expected_schema=evaluation_schema,
-            )
-
-            evaluation_sample_list.append({
-                "llm_output_dict": llm_output_dict,
-                "dataset_ground_truth_dict": dataset_ground_truth_dict,
-            })
-
-        # 先执行全部 evaluator ，保留评测结果在内存，最后统一融合写报告。
+        """执行每个数据集对应的 evaluator，并在最后融合输出统一报告。"""
+        # 收集所有的 evaluator 到一个大的结果列表里
         evaluation_result_list: List[EvaluationResultItemForReport] = []
-        for evaluator_type in self.evaluator_type_list:
-            # 创建测评器
-            evaluator = EvaluatorFactory.create(
-                evaluator_type=evaluator_type,
-            )
-            # 对每个 sample 都进行评测
-            evaluation_result = evaluator.evaluate_batch(
-                sample_list=evaluation_sample_list,
-            )
-            chart_data = evaluator.build_chart_data(
-                evaluation_result,
-            )
-            report_text = evaluator.build_report_markdown(
-                evaluation_result,
-            )
+        
+        # 按照 dataset 划分 contexts
+        from collections import defaultdict
+        dataset_context_map: Dict[DatasetType, List[Tuple[WorkflowContext, DatasetInletItem]]] = defaultdict(list)
+        for idx, ctx in enumerate(all_workflow_contexts):
+            inlet_item: DatasetInletItem = dataset_inlet_item_list[idx]
+            dataset_context_map[inlet_item.dataset_type].append((ctx, inlet_item))
 
-            evaluation_result_list.append(
-                {
+        for dataset_config in self.dataset_config_list:
+            dataset_type: DatasetType = dataset_config.dataset_type
+            ctx_items: List[Tuple[WorkflowContext, DatasetInletItem]] = dataset_context_map.get(dataset_type, [])
+            if not ctx_items:
+                continue
+
+            current_evaluator_type_list: List[EvaluatorType] = dataset_config.evaluator_type_list
+            if not current_evaluator_type_list:
+                continue
+
+            # 为当前 dataset 构建抽取 expected schema（只针对它的 evaluators）
+            evaluation_schema: Dict[str, Any] = EvaluatorAdaptor.build_expected_schema(current_evaluator_type_list)
+
+            evaluation_sample_list: List[EvaluationSample] = []
+            for ctx, inlet_item in ctx_items:
+                dataset_ground_truth_dict: Dict[str, Any] = EvaluatorAdaptor.parse_dataset_question_to_evaluator_schema(
+                    dataset_type=inlet_item.dataset_type,
+                    dataset_json_question=inlet_item.json_question,
+                    evaluator_type_list=current_evaluator_type_list,
+                )
+
+                from medical_llm_workflow.Domain.tasks.models import TaskRecord
+                final_task_record: TaskRecord = ctx.get_last_task_record()
+                
+                from medical_llm_workflow.schemas.models import ConversationMessage
+                final_output_message: ConversationMessage = final_task_record["task_context"]["output"][-1]
+                final_output_message_content: str = final_output_message["content"] if isinstance(final_output_message, dict) else final_output_message.content
+
+                llm_output_dict: Dict[str, Any] = EvaluatorAdaptor.parse_extracted_data_to_evaluator_schema(
+                    text_json_response=final_output_message_content,
+                    expected_schema=evaluation_schema,
+                )
+
+                evaluation_sample_list.append({
+                    "llm_output_dict": llm_output_dict,
+                    "dataset_ground_truth_dict": dataset_ground_truth_dict,
+                })
+
+            for evaluator_type in current_evaluator_type_list:
+                from medical_llm_workflow.Domain.benchmark.Evaluator.base_evaluator import BaseEvaluator
+                evaluator: BaseEvaluator = EvaluatorFactory.create(evaluator_type=evaluator_type)
+                
+                from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvluationBatchResult
+                evaluation_result: EvluationBatchResult = evaluator.evaluate_batch(sample_list=evaluation_sample_list)
+                chart_data: Dict[str, Any] = evaluator.build_chart_data(evaluation_result)
+                report_text: str = evaluator.build_report_markdown(evaluation_result)
+
+                evaluation_result_list.append({
+                    "dataset_type": dataset_type.value if hasattr(dataset_type, "value") else str(dataset_type),
                     "evaluator_name": evaluator_type.value,
                     "result": evaluation_result,
                     "chart_data": chart_data,
                     "report_text": report_text,
-                },
-            )
+                })
 
-            # print_log(f"\n{'='*15} 📊 Evaluator: {evaluator_type.value} {'='*15}", prefix="[EVALUATOR]")
-            # print_log(f"Average Score: {evaluation_result['average_score']:.4f}", prefix="[EVALUATOR]")
-            # print_log("Summary:", prefix="[EVALUATOR]")
-            # for k, v in evaluation_result["summary"].items():
-            #     print_log(f"  - {k}: {v}", prefix="[EVALUATOR]")
-            # print_log(f"{'='*(34 + len(evaluator_type.value))}\n", prefix="[EVALUATOR]")
-        
         return evaluation_result_list
 
 
@@ -418,25 +424,30 @@ class Workflow:
         merged_report_lines: List[str] = []
         merged_report_lines.append("# Comprehensive Evaluation Report")
         merged_report_lines.append("")
-        merged_report_lines.append(f"- Total Evaluators: {len(evaluation_result_list)}")
         
-        # 使用其中一个 evaluator 的结果长度作为总题目数
-        total_samples = evaluation_result_list[0]['result']['total_samples'] if evaluation_result_list else 0
-        merged_report_lines.append(f"- Total Samples: {total_samples}")
+        total_samples = len(dataset_inlet_item_list)
+        merged_report_lines.append(f"- Total Samples Run: {total_samples}")
+        merged_report_lines.append(f"- Total Evaluation Tasks: {len(evaluation_result_list)}")
         merged_report_lines.append("")
 
         for evaluation_item in evaluation_result_list:
+            dataset_type = evaluation_item["dataset_type"]
             evaluator_name = evaluation_item["evaluator_name"]
             evaluation_result = evaluation_item["result"]
             report_text = evaluation_item["report_text"]
             
+            merged_report_lines.append(f"# Dataset: {dataset_type} | Evaluator: {evaluator_name}")
             merged_report_lines.append(report_text)
             
             merged_report_lines.append("### Details with Questions (Workflow Level)")
             merged_report_lines.append("")
+            
+            # 找到对应这个 dataset 的所有 inlet_items 来对齐 record。由于顺序在 evaluate 时是固定的。
+            matched_inlet_items = [inlet for inlet in dataset_inlet_item_list if inlet.dataset_type.value == dataset_type or str(inlet.dataset_type) == dataset_type]
+
             for idx, record in enumerate(evaluation_result["records"]):
                 # 提取对应题目并截取前 100 个字符保证简洁
-                inlet_item = dataset_inlet_item_list[idx]
+                inlet_item = matched_inlet_items[idx]
                 short_question = inlet_item.text_question.replace("\n", " ")
                 
                 # record 包含 prediction, ground_truth 和 score
@@ -464,3 +475,4 @@ class Workflow:
             "report_path": merged_report_path,
             "results": evaluation_result_list,
         }
+        

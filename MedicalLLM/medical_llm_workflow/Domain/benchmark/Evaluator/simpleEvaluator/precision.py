@@ -13,6 +13,7 @@ from medical_llm_workflow.Domain.benchmark.Evaluator.models import (
     EvluationRecord,
     SimpleEvaluatorProtocol,
 )
+from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import EvaluatorAdaptor
 
 
 class PrecisionEvaluator(BaseEvaluator):
@@ -27,7 +28,7 @@ class PrecisionEvaluator(BaseEvaluator):
     
     # 指定 llm 用于评测的输出格式协议，提供唯一 key 避免组合时覆盖。
     protocol: Dict[str, str] = {
-        "precision_answer": "<The exact option letter/index of the final answer, e.g. 'A' or '1'>",
+        "precision_answer": "<The exact option letter/index of the final answer, e.g. 'A' or '1' or 'True'>",
     }
     
     def default_compare(
@@ -64,6 +65,21 @@ class PrecisionEvaluator(BaseEvaluator):
         # 内部统计字典，分别存储所有预测选项中的 TP (真阳) 和 FP (假阳) 频次
         tp_counts: Dict[str, int] = {}
         fp_counts: Dict[str, int] = {}
+        
+        # 提取真实的 ground_truth 集合，推断预设选项
+        ground_truths = set()
+        for record in records:
+            gt_text = record["ground_truth"].get("precision_answer", "")
+            if gt_text:
+                ground_truths.add(gt_text)
+                
+        # 注入预设缺失选项（如MEDQA必定出现 A, B, C, D, E）
+        expected_options = EvaluatorAdaptor.infer_precision_options_by_ground_truths(
+            ground_truths,
+        )
+        for opt in expected_options:
+            tp_counts[opt] = 0
+            fp_counts[opt] = 0
         
         # 遍历全量评测样本记录，统计混淆矩阵中的关键元素
         for record in records:

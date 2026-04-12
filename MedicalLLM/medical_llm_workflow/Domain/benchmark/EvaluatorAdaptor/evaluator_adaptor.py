@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from medical_llm_workflow.Domain.benchmark.Evaluator.evaluator_factory import EvaluatorFactory
+from medical_llm_workflow.Domain.benchmark.Evaluator import evaluator_factory
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType
 from medical_llm_workflow.Domain.benchmark.Dataset import BaseNormalizedQuestion
 
 
 # 将 dataset 的 protocol 映射到 evaluator 需要的字段，形成一个适配器，方便 evaluator 进行评测。
-# 考虑了 dataset 种类的 evaluator 种类的二维 mapping
 # dataset 必须用一个额外的 map 来适配 evaluator
 DATASET_EVALUATOR_SCHEMA_MAP = {
     DatasetType.MED_QA: {
@@ -24,6 +23,10 @@ DATASET_EVALUATOR_SCHEMA_MAP = {
         EvaluatorType.ACCURACY: ["ground_truth", "accuracy_answer"],
         EvaluatorType.PRECISION: ["ground_truth", "precision_answer"],
     },
+}
+
+DATASET_PRECISION_OPTIONS_MAP = {
+    DatasetType.MED_QA: ["A", "B", "C", "D", "E"],
 }
 
 
@@ -38,7 +41,7 @@ class EvaluatorAdaptor:
 
         # 每个 evaluator 都能定义自己的结构化字段，最终合并为一个统一 schema。
         for evaluator_type in evaluator_type_list:
-            schema = EvaluatorFactory.get_evaluator_llm_protocol(evaluator_type)
+            schema = evaluator_factory.EvaluatorFactory.get_evaluator_llm_protocol(evaluator_type)
             # print(f"Schema for evaluator {evaluator_type.value}:\n{schema}")
             for schema_key in schema:
                 if schema_key not in final_schema:
@@ -95,3 +98,20 @@ class EvaluatorAdaptor:
                 response_dict[schema_key] = ""
 
         return response_dict
+
+    @classmethod
+    def infer_precision_options_by_ground_truths(
+        cls,
+        ground_truths: set[str],
+    ) -> List[str]:
+        """
+        根据当前批次中出现的真实答案内容，反推该次评估的数据集所有的固定选项集。
+        """
+        if not ground_truths:
+            return []
+            
+        for options_list in DATASET_PRECISION_OPTIONS_MAP.values():
+            if ground_truths.issubset(set(options_list)):
+                return options_list
+                
+        return list(ground_truths)

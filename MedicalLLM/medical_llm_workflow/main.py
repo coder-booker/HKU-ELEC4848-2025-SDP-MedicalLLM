@@ -5,6 +5,8 @@
 """
 import asyncio
 import traceback
+import datetime
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -15,19 +17,26 @@ from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetCo
 from medical_llm_workflow.Domain.benchmark.Evaluator import EvaluatorType
 from medical_llm_workflow.Infrastructure.LLM_client import PoeChatbotConfig, PoeChatbotModel, ChatbotType
 from medical_llm_workflow.Service.workflow import Workflow
-from medical_llm_workflow.utils import print_log
+from medical_llm_workflow.app_settings import AppSettings
+from medical_llm_workflow.utils import print_log, run_dir_var
 
 
 
 # 全局默认配置：作为以后后端服务的默认回退参数，各函数直接在此取值
-DEFAULT_DATASET_CONFIG = [DatasetConfig(
-    dataset_type=DatasetType.MED_QA,
-    num_of_questions=1,
-)]
-
-# 全局默认配置：评测器类型列表
-DEFAULT_EVALUATOR_TYPE_LIST = [
-    EvaluatorType.ACCURACY,
+DEFAULT_DATASET_CONFIG = [
+    DatasetConfig(
+        dataset_type=DatasetType.MED_QA,
+        num_of_questions=1,
+        evaluator_type_list=[
+            EvaluatorType.ACCURACY,
+            EvaluatorType.PRECISION,
+        ],
+    ),
+    DatasetConfig(
+        dataset_type=DatasetType.PUBMED,
+        num_of_questions=2,
+        evaluator_type_list=[EvaluatorType.ACCURACY],
+    ),
 ]
 
 # 全局默认配置：大语言模型请求配置
@@ -44,7 +53,6 @@ DEFAULT_RECIPE_TYPE = RecipeType.MEDICAL_REASONING_3_STEPS
 async def run_core_workflow(
     task_config_list: List[TaskConfig],
     dataset_config_list: List[DatasetConfig],
-    evaluator_type_list: List[EvaluatorType],
 ) -> Tuple[List[WorkflowContext], Dict[str, Any]]:
     """
     工作流核心执行函数。
@@ -56,7 +64,6 @@ async def run_core_workflow(
         name="Medical Reasoning Workflow Demo",
         task_config_list=task_config_list,
         dataset_config_list=dataset_config_list,
-        evaluator_type_list=evaluator_type_list,
     )
 
     # 直接包裹主执行与日志输出逻辑，不需要过度抓取边界异常
@@ -80,12 +87,18 @@ async def main():
     
     task_config_list = recipe.build_task_configs()
     
-    # 组装完整数据后传给统一的执行函数
-    await run_core_workflow(
-        task_config_list=task_config_list,
-        dataset_config_list=DEFAULT_DATASET_CONFIG,
-        evaluator_type_list=DEFAULT_EVALUATOR_TYPE_LIST,
-    )
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join(AppSettings.RESULT_DIR, ts)
+    dir_token = run_dir_var.set(run_dir)
+    
+    try:
+        # 组装完整数据后传给统一的执行函数
+        await run_core_workflow(
+            task_config_list=task_config_list,
+            dataset_config_list=DEFAULT_DATASET_CONFIG,
+        )
+    finally:
+        run_dir_var.reset(dir_token)
 
 
 if __name__ == "__main__":

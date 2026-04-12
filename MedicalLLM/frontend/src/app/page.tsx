@@ -8,20 +8,9 @@ import { TaskCard } from "../components/TaskCard";
 import { QuestionStatusList } from "../components/QuestionStatusList";
 import { QuestionDetailView } from "../components/QuestionDetailView";
 import { EvaluationDashboard } from "../components/EvaluationDashboard";
-import { TaskConfig, QuestionStatus, TaskState } from "../types";
+import { DatasetConfigurator, DatasetConfigPayload } from "../components/DatasetConfigurator";
+import { TaskConfig, QuestionStatus, TaskState, OptionsState, RecipeOption } from "../types";
 
-type Option = { label: string; value: string };
-// 新增带 tasks 的 Recipe 类型
-type RecipeOption = Option & { tasks: TaskConfig[] };
-type OptionsState = {
-  datasets: Option[];
-  evaluators: Option[];
-  chatbotTypes: Option[];
-  models: Option[];
-  recipes: RecipeOption[];
-};
-
-// 工作流运行阶段
 type WorkflowPhase = "idle" | "dataset" | "execution" | "evaluation" | "completed";
 
 // 全局工作流状态
@@ -61,12 +50,15 @@ export default function Home() {
   // 获取和管理可用选项
   const [options, setOptions] = useState<OptionsState | null>(null);
 
-  // 基础运行选项
-  const [datasetConfig, setDatasetConfig] = useState({
-    dataset_type: "med_qa",
-    num_of_questions: 4,
-  });
-  const [evaluatorType, setEvaluatorType] = useState("accuracy");
+  // 基础运行选项：数组组合
+  const [datasetConfigs, setDatasetConfigs] = useState<DatasetConfigPayload[]>([
+    {
+      dataset_type: "med_qa",
+      num_of_questions: 4,
+      evaluator_types: ["accuracy"]
+    }
+  ]);
+  
   const [globalModel] = useState("gpt-5.4-nano");
   const [globalChatbotType] = useState("poe");
   const [recipeType, setRecipeType] = useState("medical_reasoning_3_steps");
@@ -77,7 +69,10 @@ export default function Home() {
   // 获取可用选项列表
   useEffect(() => {
     fetch("http://localhost:8000/api/options")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         setOptions(data);
         // 初始化时自动填充默认 Recipe 的配置
@@ -85,8 +80,20 @@ export default function Home() {
         if (defaultRecipe && defaultRecipe.tasks) {
           setTasks(JSON.parse(JSON.stringify(defaultRecipe.tasks)));
         }
+        setError(""); // Clear error if fetch is successful
       })
-      .catch((err) => console.error("Failed to fetch options", err));
+      .catch((err) => {
+        console.error("Failed to fetch options", err);
+        setError("无法连接到后端服务获取数据项，已加载兜底本地配置(Fallback)。请检查后端服务是否启动。");
+        // 兜底配置 Fallback
+        setOptions({
+          datasets: [{ label: "MedQA (Fallback)", value: "med_qa", supportedEvaluators: ["accuracy"] }],
+          evaluators: [{ label: "Accuracy (Fallback)", value: "accuracy" }],
+          chatbotTypes: [{ label: "Poe Chatbot", value: "poe" }],
+          models: [{ label: "GPT-4", value: "gpt-4" }],
+          recipes: [],
+        });
+      });
   }, []);
 
     // 选择不同 recipe 时，暂时仅保存 state，等待 apply
@@ -256,8 +263,7 @@ export default function Home() {
 
     // 组装给后端的纯配置组合
     const payload = {
-      datasets: [datasetConfig],
-      evaluator_types: [evaluatorType],
+      datasets: datasetConfigs,
       tasks: tasks,
     };
 
@@ -478,62 +484,50 @@ export default function Home() {
             <summary className="text-sm font-bold text-gray-700 cursor-pointer select-none pb-2 border-b border-gray-100 mb-4 hover:text-blue-600 transition-colors">
               Configuration Options
             </summary>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm mt-2">
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-gray-700">Dataset</label>
-                <select
-                  value={datasetConfig.dataset_type}
-                  onChange={e => setDatasetConfig({ ...datasetConfig, dataset_type: e.target.value })}
-                  className="border rounded-md p-1.5" disabled={isRunning || hasRun}
-                >
-                  {options?.datasets.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-gray-700">Questions (Sample limit)</label>
-                <input
-                  type="number"
-                  value={datasetConfig.num_of_questions}
-                  onChange={e => setDatasetConfig({ ...datasetConfig, num_of_questions: Number(e.target.value) })}
-                  min={1} max={10}
-                  disabled={isRunning || hasRun}
-                  className="border rounded-md p-1.5"
+            
+            {/* Disabled UI Wrapper */}
+            <div className={`relative transition-all duration-300 ${isRunning || hasRun ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+              
+              {/* Invisible overlay capturing pointer events to show cursor and tooltip */}
+              {(isRunning || hasRun) && (
+                <div 
+                  className="absolute inset-0 z-10 pointer-events-auto cursor-not-allowed" 
+                  title="运行已开始或已完成，请重置 Workflow 才能修改配置"
                 />
-              </div>
+              )}
 
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-gray-700">Evaluator</label>
-                <select
-                  value={evaluatorType}
-                  onChange={e => setEvaluatorType(e.target.value)}
-                  className="border rounded-md p-1.5" disabled={isRunning}
-                >
-                  {options?.evaluators.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
+              <div className="flex flex-col gap-6 text-sm mt-2">
+                <DatasetConfigurator 
+                  configs={datasetConfigs}
+                  onChange={setDatasetConfigs}
+                  availableDatasets={options?.datasets || []}
+                  availableEvaluators={options?.evaluators || []}
+                  disabled={isRunning || hasRun}
+                />
 
-              <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-gray-100 md:col-span-4">
-                <label className="font-semibold text-gray-700">Load Recipe Strategy</label>
-                <div className="flex items-center gap-3">
-                  <select
-                    value={recipeType}
-                    onChange={handleRecipeChange}
-                    className="border rounded-md p-1.5 flex-1 max-w-sm"
-                    disabled={isRunning || hasRun}
-                  >
-                    <option value="custom" disabled hidden>-- Custom Pipeline (Unsaved) --</option>
-                    {options?.recipes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                  <button
-                    onClick={handleApplyRecipe}
-                    disabled={isRunning || hasRun || recipeType === "custom"}
-                    className="px-4 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed shadow-sm"
-                  >
-                    Apply & Overwrite Tasks
-                  </button>
+                {/* Recipe Strategy */}
+                <div className="flex flex-col gap-2 mt-2 pt-4 border-t border-gray-100">
+                  <label className="font-semibold text-gray-700">Load Recipe Strategy</label>
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={recipeType}
+                      onChange={handleRecipeChange}
+                      className="border rounded-md p-1.5 flex-1 max-w-sm"
+                      disabled={isRunning || hasRun}
+                    >
+                      <option value="custom" disabled hidden>-- Custom Pipeline (Unsaved) --</option>
+                      {options?.recipes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <button
+                      onClick={handleApplyRecipe}
+                      disabled={isRunning || hasRun || recipeType === "custom"}
+                      className="px-4 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed shadow-sm"
+                    >
+                      Apply & Overwrite Tasks
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">Applying a recipe will completely replace your current tasks setup.</p>
                 </div>
-                <p className="text-xs text-gray-500">Applying a recipe will completely replace your current tasks setup.</p>
               </div>
             </div>
           </details>
@@ -678,15 +672,17 @@ export default function Home() {
         </div>
 
         {/* 最终评估报告折叠面板 */}
-        <details className="group bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100" open={evaluationData && evaluationData.length > 0}>
-          <summary className="px-6 py-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-800 cursor-pointer select-none hover:bg-gray-100 transition-colors">
-            Final Evaluation Report
-          </summary>
+        {(hasRun || isRunning) && (
+          <details className="group bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100" open={evaluationData && evaluationData.length > 0}>
+            <summary className="px-6 py-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-800 cursor-pointer select-none hover:bg-gray-100 transition-colors">
+              Final Evaluation Report
+            </summary>
 
-          <div className="p-6 overflow-y-auto max-h-[70vh]">
-            <EvaluationDashboard evaluationData={evaluationData} />
-          </div>
-        </details>
+            <div className="p-6 overflow-y-auto max-h-[70vh]">
+              <EvaluationDashboard evaluationData={evaluationData} />
+            </div>
+          </details>
+        )}
 
       </div>
     </main>

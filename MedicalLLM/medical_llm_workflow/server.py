@@ -14,6 +14,7 @@ from medical_llm_workflow.utils import sse_queue_var, run_dir_var, emit_event, p
 
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetConfig
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
+from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import DATASET_EVALUATOR_SCHEMA_MAP
 from medical_llm_workflow.Domain.tasks import TaskConfig
 from medical_llm_workflow.Infrastructure.LLM_client.models import ChatbotType, PoeChatbotModel
 from medical_llm_workflow.Domain.recipes.models import RecipeType
@@ -38,17 +39,18 @@ class DatasetConfigPayload(BaseModel):
     单个数据集与问题数量配置。
     - dataset_type: str, 数据集类型
     - num_of_questions: int, 该数据集抽样问题数量
+    - evaluator_types: List[str], 该数据集所需的评测器类型列表
     """
 
     dataset_type: str = DatasetType.MED_QA.value
     num_of_questions: int = 4
+    evaluator_types: List[str] = [EvaluatorType.ACCURACY.value]
 
 
 class RunConfigPayload(BaseModel):
     """
     工作流运行请求参数配置。
-    - datasets: List[DatasetConfigPayload], 数据集与题目数配置列表
-    - evaluator_types: List[str], 评测器类型列表
+    - datasets: List[DatasetConfigPayload], 数据集与题目数及各自评测器配置列表
     - chatbot_type: str, 聊天机器人类型
     - model: str, 模型类型
     - temperature: float, 生成温度
@@ -57,7 +59,6 @@ class RunConfigPayload(BaseModel):
     """
 
     datasets: List[DatasetConfigPayload] = [DatasetConfigPayload()]
-    evaluator_types: List[str] = [EvaluatorType.ACCURACY.value]
     chatbot_type: str = ChatbotType.POE.value
     model: str = PoeChatbotModel.GPT_5_4_NANO.value
     temperature: float = 0.7
@@ -88,8 +89,28 @@ async def get_workflow_options():
             "tasks": [t.model_dump(exclude_none=True) for t in task_configs],
         })
 
+    def get_supported_evaluators(dataset_val: str) -> List[str]:
+        # 从 evaluator_adaptor 里面的 MAP 动态获取某数据集支持的 evaluator 类型
+        supported = []
+        try:
+            dataset_enum = DatasetType(dataset_val)
+            if dataset_enum in DATASET_EVALUATOR_SCHEMA_MAP:
+                # 获取该数据集下有 schema 定义的 evaluator 列表 (键)
+                supported = [eval_type.value for eval_type in DATASET_EVALUATOR_SCHEMA_MAP[dataset_enum].keys()]
+        except ValueError:
+            pass  # 如果传入未知的 dataset_val，直接忽略
+        
+        # 兼容性处理：如果 MAP 尚未覆盖到或没写，也可选择全部或者空列表
+        return supported
+
     response_body = {
-        "datasets": [{"label": e.name, "value": e.value} for e in DatasetType],
+        "datasets": [
+            {
+                "label": e.name,
+                "value": e.value,
+                "supportedEvaluators": get_supported_evaluators(e.value)
+            } for e in DatasetType
+        ],
         "evaluators": [{"label": e.name, "value": e.value} for e in EvaluatorType],
         "chatbotTypes": [{"label": e.name, "value": e.value} for e in ChatbotType],
         "models": [{"label": e.name, "value": e.value} for e in PoeChatbotModel if e != PoeChatbotModel.EMPTY_MODEL],
@@ -161,10 +182,10 @@ async def run_workflow(config: RunConfigPayload):
                 DatasetConfig(
                     dataset_type=DatasetType(d.dataset_type),
                     num_of_questions=d.num_of_questions,
+                    evaluator_type_list=[EvaluatorType(e) for e in d.evaluator_types],
                 )
                 for d in config.datasets
             ]
-            evaluator_type_list = [EvaluatorType(e) for e in config.evaluator_types]
             
             # 后端不再处理 recipe 和 custom_tasks 的判断
             # 所有任务相关参数全由前端通过 `tasks` 数组传入，确保真正的配置自治
@@ -178,7 +199,6 @@ async def run_workflow(config: RunConfigPayload):
             contexts, report_info = await run_core_workflow(
                 task_config_list=task_config_list,
                 dataset_config_list=dataset_config_list,
-                evaluator_type_list=evaluator_type_list,
             )
             
             # Workflow 执行完后，统一组装返回
