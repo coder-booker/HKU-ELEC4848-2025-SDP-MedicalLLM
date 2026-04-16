@@ -5,9 +5,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
-import datetime
 
 from medical_llm_workflow.main import run_core_workflow, DEFAULT_CHATBOT_CONFIG
 from medical_llm_workflow.utils import sse_queue_var, run_dir_var, emit_event, print_log
@@ -15,7 +14,7 @@ from medical_llm_workflow.utils import sse_queue_var, run_dir_var, emit_event, p
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetConfig
 from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvaluatorType
 from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import DATASET_EVALUATOR_SCHEMA_MAP
-from medical_llm_workflow.Domain.tasks import TaskConfig
+from medical_llm_workflow.Domain.tasks import TaskConfig, TaskType, SmartExtractorTaskConfig
 from medical_llm_workflow.Infrastructure.LLM_client.models import ChatbotType, PoeChatbotModel
 from medical_llm_workflow.Domain.recipes.models import RecipeType
 from medical_llm_workflow.Domain.recipes.recipe_factory import RecipeFactory
@@ -40,11 +39,13 @@ class DatasetConfigPayload(BaseModel):
     - dataset_type: str, 数据集类型
     - num_of_questions: int, 该数据集抽样问题数量
     - evaluator_types: List[str], 该数据集所需的评测器类型列表
+    - evaluator_configs: Dict[str, dict], 该数据集下各评测器对应的 LLM 参数配置 (如果有)
     """
 
     dataset_type: str = DatasetType.MED_QA.value
     num_of_questions: int = 4
     evaluator_types: List[str] = [EvaluatorType.ACCURACY.value]
+    evaluator_configs: dict = Field(default_factory=dict)
 
 
 class RunConfigPayload(BaseModel):
@@ -108,10 +109,16 @@ async def get_workflow_options():
             {
                 "label": e.name,
                 "value": e.value,
-                "supportedEvaluators": get_supported_evaluators(e.value)
+                "supportedEvaluators": get_supported_evaluators(e.value),
             } for e in DatasetType
         ],
-        "evaluators": [{"label": e.name, "value": e.value} for e in EvaluatorType],
+        "evaluators": [
+            {
+                "label": e.name,
+                "value": e.value,
+                "requiresLLM": e.value in [EvaluatorType.CONSISTENCY.value, EvaluatorType.CLARITY.value],
+            } for e in EvaluatorType
+        ],
         "chatbotTypes": [{"label": e.name, "value": e.value} for e in ChatbotType],
         "models": [{"label": e.name, "value": e.value} for e in PoeChatbotModel if e != PoeChatbotModel.EMPTY_MODEL],
         "recipes": recipes_list,
@@ -160,10 +167,9 @@ async def run_workflow(config: RunConfigPayload):
     # 建立一条协程间通信的消息队列
     queue = asyncio.Queue()
 
-    # 为工作流配置前端可见的时间戳
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    # 让存储服务进行单目录覆写以释放硬盘
+    # 让存储服务进行单目录覆写以释放硬盘。并取最后一级目录名为 run_id 供前端访问。
     run_dir = StorageService.init_run_dir()
+    run_id = os.path.basename(run_dir)
 
     async def workflow_runner():
         """执行流的具体后台任务。"""
@@ -174,7 +180,7 @@ async def run_workflow(config: RunConfigPayload):
             # 建立记录上下文事件，方便前端知晓本次请求实际记录存放位置
             emit_event(
                 "WORKFLOW_STARTED", 
-                {"run_id": ts},
+                {"run_id": run_id},
             )
             # raise Exception("测试异常捕获机制")
             
@@ -184,6 +190,7 @@ async def run_workflow(config: RunConfigPayload):
                     dataset_type=DatasetType(d.dataset_type),
                     num_of_questions=d.num_of_questions,
                     evaluator_type_list=[EvaluatorType(e) for e in d.evaluator_types],
+                    evaluator_configs=d.evaluator_configs, # 将配置传进给基类 DatasetConfig
                 )
                 for d in config.datasets
             ]
@@ -191,10 +198,12 @@ async def run_workflow(config: RunConfigPayload):
             # 后端不再处理 recipe 和 custom_tasks 的判断
             # 所有任务相关参数全由前端通过 `tasks` 数组传入，确保真正的配置自治
 
-            task_config_list = [
-                TaskConfig.model_validate(task_dict) 
-                for task_dict in config.tasks
-            ]
+            task_config_list = []
+            for task_dict in config.tasks:
+                if task_dict.get("type") == TaskType.SMART_EXTRACTOR.value:
+                    task_config_list.append(SmartExtractorTaskConfig.model_validate(task_dict))
+                else:
+                    task_config_list.append(TaskConfig.model_validate(task_dict))
             
             # 执行工作流，参数已被完整处理
             contexts, report_info = await run_core_workflow(
@@ -206,12 +215,12 @@ async def run_workflow(config: RunConfigPayload):
             eval_report_path = os.path.join(run_dir, AppSettings.EVALUATION_REPORT_FILENAME)
             workflow_log_path = os.path.join(run_dir, AppSettings.WORKFLOW_LOG_FILENAME)
             
-            eval_content = ""
+            eval_content = "<ERROR: Evaluation report not found>"
             if os.path.exists(eval_report_path):
                 with open(eval_report_path, "r", encoding="utf-8") as f:
                     eval_content = f.read()
                     
-            log_content = ""
+            log_content = "<ERROR: Workflow log not found>"
             if os.path.exists(workflow_log_path):
                 with open(workflow_log_path, "r", encoding="utf-8") as f:
                     log_content = f.read()
@@ -221,7 +230,7 @@ async def run_workflow(config: RunConfigPayload):
                 "status": "DONE",
                 "evaluation_report": eval_content,
                 "workflow_log": log_content,
-                "evaluation_data": report_info["results"] if report_info else None,
+                "evaluation_data": report_info.get("results") if report_info else None,
             }
             
             print_log(f"Workflow completely done. Emitting [DONE] payload buffer: {json.dumps(final_payload)[:500]}...", prefix="[API Response /api/run]", debug=True)

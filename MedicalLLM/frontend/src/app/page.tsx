@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 
 import { DATASET_CONTEXT_ID } from "../components/PromptEditor";
 import { TaskCard } from "../components/TaskCard";
+import { SmartExtractorCard } from "../components/SmartExtractorCard";
 import { QuestionStatusList } from "../components/QuestionStatusList";
 import { QuestionDetailView } from "../components/QuestionDetailView";
 import { EvaluationDashboard } from "../components/EvaluationDashboard";
@@ -65,6 +66,18 @@ export default function Home() {
 
   // 管理任务列表配置，前端自治
   const [tasks, setTasks] = useState<TaskConfig[]>([]);
+
+  const [extractorConfig, setExtractorConfig] = useState<TaskConfig>({
+    id: "smart_extractor",
+    type: "smart_extractor",
+    medical_type: "default",
+    chatbot_config: {
+      chatbot_type: "poe",
+      model: "gpt-5.4-nano",
+      temperature: 0.7,
+      max_tokens: 5096,
+    }
+  });
 
   // 获取可用选项列表
   useEffect(() => {
@@ -218,7 +231,7 @@ export default function Home() {
   };
 
   // 修改某个具体的任务内的属性
-  const handleTaskChange = (index: number, field: string, value: string | string[]) => {
+  const handleTaskChange = (index: number, field: string, value: any) => {
     setTasks(prev => {
       const newTasks = [...prev];
       const task = newTasks[index];
@@ -237,13 +250,32 @@ export default function Home() {
           // 兼容之前的 string 逗号拼接
           task.input_msg_sources = value.split(',').map((s: string) => s.trim()).filter(Boolean);
         }
+      } else if (field === "chatbot_config") {
+        task.chatbot_config = value;
       }
       return newTasks;
     });
     setRecipeType("custom");
   };
 
+  const handleExtractorChange = (field: string, value: any) => {
+    setExtractorConfig((prev: TaskConfig) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  // computed property
+  const activeEvaluators = Array.from(
+    new Set(datasetConfigs.flatMap((dc) => dc.evaluator_types || []))
+  );
+
   const handleStartWorkflow = async () => {
+    if (activeEvaluators.length === 0) {
+      alert("Please select at least one evaluator before starting the workflow.");
+      return;
+    }
+
     setIsRunning(true);
     setHasRun(true);
     setError("");
@@ -261,10 +293,17 @@ export default function Home() {
     setSelectedQuestion(null);
     setQuestionDetail(null);
 
+    // 动态生成 SmartExtractor 的所需依赖（来源列表+评测器列表）
+    const finalExtractorConfig = {
+      ...extractorConfig,
+      input_msg_sources: ["question_task", ...tasks.map((t) => t.id)],
+      evaluator_type_list: activeEvaluators,
+    };
+
     // 组装给后端的纯配置组合
     const payload = {
       datasets: datasetConfigs,
-      tasks: tasks,
+      tasks: activeEvaluators.length > 0 ? [...tasks, finalExtractorConfig] : tasks,
     };
 
     try {
@@ -507,6 +546,7 @@ export default function Home() {
                   onChange={setDatasetConfigs}
                   availableDatasets={options?.datasets || []}
                   availableEvaluators={options?.evaluators || []}
+                  options={options}
                   disabled={isRunning || hasRun}
                 />
 
@@ -665,6 +705,7 @@ export default function Home() {
                 idx={idx}
                 isRunning={isRunning || hasRun}
                 availableTags={getAvailableTags(idx)}
+                options={options}
                 onTaskChange={handleTaskChange}
                   onRemove={() => handleRemoveTask(idx)}
                 onMoveUp={() => handleMoveTask(idx, 'up')}
@@ -673,6 +714,16 @@ export default function Home() {
                 isLast={idx === tasks.length - 1}
               />
             ))}
+            
+            {activeEvaluators.length > 0 && (
+              <SmartExtractorCard
+                config={extractorConfig}
+                isRunning={isRunning || hasRun}
+                options={options}
+                evaluatorsEnablingExtraction={activeEvaluators}
+                onChange={handleExtractorChange}
+              />
+            )}
           </div>
         </div>
 

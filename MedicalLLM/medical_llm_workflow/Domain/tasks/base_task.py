@@ -59,6 +59,9 @@ class BaseTask:
                 # 获取该任务最后一条回答的内容
                 output_content = str(record["task_context"]["output"][-1]["content"])
                 prompt = prompt.replace(f"{{{{{tag}}}}}", output_content)
+            else:
+                # 触发兜底的占位符返回值
+                prompt = prompt.replace(f"{{{{{tag}}}}}", f"[ERROR] Missing context for {tag}: no output string found")
 
         return prompt
     
@@ -76,9 +79,18 @@ class BaseTask:
         # 1. 遍历 input_msg_sources，将这些 task 的输出消息直接加入列表
         for source_task_id in self.config.input_msg_sources:
             record = workflow_context_port.get_task_record(source_task_id)
-            if record and record["task_context"]["output"]:
+            if record and record["task_context"].get("output"):
                 # 将该 task 所有的输出作为上文信息插入
                 messages.extend(record["task_context"]["output"])
+            else:
+                # 触发了缺少关联源数据的卫语句，返回错误占位
+                messages.append(
+                    {
+                        "role": ConversationMessageRole.SYSTEM,
+                        "content": f"[ERROR] Cannot inject messages from missing source: {source_task_id}",
+                        "status": ConversationMessageStatus.FAILED,
+                    }
+                )
         
         # 2. 构建最后一条带有已替换好上下文字段的提示词
         task_prompt = self.build_prompt(workflow_context_port)
@@ -129,7 +141,7 @@ class BaseTask:
             )
 
             res_message: ConversationMessage = {
-                "role": ConversationMessageRole.USER,
+                "role": ConversationMessageRole.BOT,
                 "content": response,
                 "status": ConversationMessageStatus.COMPLETED,
             }
@@ -137,7 +149,7 @@ class BaseTask:
         except Exception as e:
             # 让上层处理异常
             res_message: ConversationMessage = {
-                "role": ConversationMessageRole.USER,
+                "role": ConversationMessageRole.BOT,
                 "content": f"Error: {str(e)}",
                 "status": ConversationMessageStatus.FAILED,
             }

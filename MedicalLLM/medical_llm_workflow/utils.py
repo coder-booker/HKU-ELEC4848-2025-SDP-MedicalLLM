@@ -165,7 +165,7 @@ def save_question_log(
                 "role": role_str,
                 "content": msg_content,
             })
-            content_lines.append(f"**{role_str}**:\n{msg_content}\n")
+            content_lines.append(f"**{role_str}**:\n```\n{msg_content}\n```\n")
             
         # 整理输出
         output_msgs = []
@@ -178,7 +178,7 @@ def save_question_log(
                 "role": role_str,
                 "content": msg_content,
             })
-            content_lines.append(f"**{role_str}**:\n{msg_content}\n")
+            content_lines.append(f"**{role_str}**:\n```\n{msg_content}\n```\n")
             
         # 增加一笔结构化记录
         structured_data["tasks"].append({

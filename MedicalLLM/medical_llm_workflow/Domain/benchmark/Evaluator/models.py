@@ -13,6 +13,8 @@ class EvaluatorType(str, Enum):
 
     ACCURACY = "accuracy"
     PRECISION = "precision"
+    CONSISTENCY = "consistency"
+    CLARITY = "clarity"
 
 class EvaluationSample(TypedDict):
     """
@@ -23,6 +25,7 @@ class EvaluationSample(TypedDict):
     # - metadata: Optional[Dict[str, Any]] - 其他元信息
 
     # sample_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    workflow_context_id: uuid.UUID
     llm_output_dict: Dict[str, Any]
     dataset_ground_truth_dict: Dict[str, Any]
     # metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -37,23 +40,29 @@ class EvaluatorDisplayType(str, Enum):
 EVALUATOR_DISPLAY_MAP = {
     "accuracy_evaluator": EvaluatorDisplayType.PERCENTAGE.value,
     "precision_evaluator": EvaluatorDisplayType.PERCENTAGE.value,
+    "consistency_evaluator": EvaluatorDisplayType.BAR_CHART.value,
+    "clarity_evaluator": EvaluatorDisplayType.BAR_CHART.value,
     "base_evaluator": EvaluatorDisplayType.BAR_CHART.value,
 }
 
-class EvluationRecord(TypedDict):
+class EvluationRecord(TypedDict, total=False):
     """
     - sample_id: str - 样本唯一标识
     - score: float - 评估得分，范围 [0, 1]
     - prediction: Any - 模型预测结果原文
     - ground_truth: Any - 评估目标答案原文
     - detail: Optional[Dict[str, Any]] - 其他评估细节信息
+    - llm_prompt: str - LLM-as-a-judge 的评估 prompt 记录
+    - llm_response: str - LLM-as-a-judge 的评估响应内容
     """
 
     # sample_id: str
     score: float
     prediction: Dict[str, Any]
     ground_truth: Dict[str, Any]
-    detail: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    detail: Optional[Dict[str, Any]]
+    llm_prompt: Optional[str]
+    llm_response: Optional[str]
 
 
 class EvluationBatchResult(TypedDict):

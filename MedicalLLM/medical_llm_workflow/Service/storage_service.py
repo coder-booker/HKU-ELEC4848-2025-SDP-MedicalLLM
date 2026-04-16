@@ -32,7 +32,7 @@ class StorageService:
         )
         
         if not os.path.exists(json_path):
-            return None
+            return {"error": f"[ERROR] The expected question log at '{json_path}' does not exist"}
             
         with open(json_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -74,6 +74,48 @@ class StorageService:
             mf.write(markdown_content)
 
     @staticmethod
+    def append_question_run_data(
+        run_dir: str,
+        dataset_type: str,
+        question_index: int,
+        task_data: Dict[str, Any],
+        markdown_snippet: str,
+    ) -> None:
+        """为指定题目的 JSON 与 Markdown 日志追加单一任务的运行结果。"""
+        target_dir = os.path.join(
+            run_dir,
+            dataset_type,
+        )
+        os.makedirs(target_dir, exist_ok=True)
+
+        json_path = os.path.join(
+            target_dir,
+            f"question_{question_index}.json",
+        )
+        # print(f"Appending task data to {json_path}...")
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as jf:
+                structured_data = json.load(jf)
+            
+            structured_data.setdefault("tasks", []).append(task_data)
+            
+            with open(json_path, "w", encoding="utf-8") as jf:
+                json.dump(
+                    structured_data,
+                    jf,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+        md_path = os.path.join(
+            target_dir,
+            f"question_{question_index}.md",
+        )
+        if os.path.exists(md_path):
+            with open(md_path, "a", encoding="utf-8") as mf:
+                mf.write("\n" + markdown_snippet)
+
+    @staticmethod
     def write_workflow_log(
         run_dir: str,
         msg_str: str,
@@ -103,7 +145,7 @@ class StorageService:
         if os.path.exists(log_path):
             with open(log_path, "r", encoding="utf-8") as f:
                 return f.read()
-        return ""
+        return "<ERROR: Workflow log file does not exist>"
 
     @staticmethod
     def write_evaluation_report(

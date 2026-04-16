@@ -42,10 +42,11 @@ export type Option = { label: string; value: string };
 
 export type DatasetOption = Option & { supportedEvaluators: string[] };
 export type RecipeOption = Option & { tasks: TaskConfig[] };
+export type EvaluatorOption = Option & { requiresLLM?: boolean };
 
 export type OptionsState = {
   datasets: DatasetOption[];
-  evaluators: Option[];
+  evaluators: EvaluatorOption[];
   chatbotTypes: Option[];
   models: Option[];
   recipes: RecipeOption[];

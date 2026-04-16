@@ -22,6 +22,8 @@ DATASET_EVALUATOR_SCHEMA_MAP = {
     DatasetType.PUBMED: {
         EvaluatorType.ACCURACY: ["ground_truth", "accuracy_answer"],
         EvaluatorType.PRECISION: ["ground_truth", "precision_answer"],
+        EvaluatorType.CONSISTENCY: ["long_ground_truth", "reasoning_process"],
+        EvaluatorType.CLARITY: ["long_ground_truth", "reasoning_process"],
     },
 }
 
@@ -87,9 +89,10 @@ class EvaluatorAdaptor:
                         "success": True,
                     },
                 )
-        except Exception:
+        except Exception as e:
             response_dict = {
                 "success": False,
+                "error": f"Failed to parse expected JSON schema from extracted text.\nReason: {str(e)}\nRaw Response: {text_json_response}",
             }
 
         # 补齐 schema 中缺失字段，保证下游 evaluator 消费时字段稳定。
@@ -108,7 +111,7 @@ class EvaluatorAdaptor:
         根据当前批次中出现的真实答案内容，反推该次评估的数据集所有的固定选项集。
         """
         if not ground_truths:
-            return []
+            return ["<ERROR: Empty ground_truths set provided, cannot infer options>"]
             
         for options_list in DATASET_PRECISION_OPTIONS_MAP.values():
             if ground_truths.issubset(set(options_list)):

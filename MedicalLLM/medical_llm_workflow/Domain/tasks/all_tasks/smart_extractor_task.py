@@ -8,6 +8,21 @@ from typing import List
 import json
 import re
 
+from medical_llm_workflow.schemas.models import (
+    ConversationMessageStatus,
+    ConversationMessageRole,
+    ConversationMessage,
+)
+from medical_llm_workflow.Domain.tasks.models import (
+    TaskContext,
+    TaskRecord,
+)
+from medical_llm_workflow.Domain.workflow_context.models import (
+    WorkflowContextPort,
+)
+from medical_llm_workflow.Infrastructure import ClientFactory
+from medical_llm_workflow.Infrastructure.llm_json_utils import call_llm_with_json_retry
+from medical_llm_workflow.utils import emit_event
 from medical_llm_workflow.Domain.tasks.base_task import BaseTask
 from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor import EvaluatorAdaptor
 from medical_llm_workflow.Domain.tasks import SmartExtractorTaskConfig
@@ -17,7 +32,7 @@ class SmartExtractorTask(BaseTask):
     """Evaluator 驱动的结构化抽取任务。"""
 
     PROMPT_TEMPLATE = (
-        "Extract the final answer from the previous assistant response."
+        "Extract the required information (such as final answer, reasoning process, etc.) from the previous assistant response based on the following JSON schema."
         "Output ONLY valid JSON without markdown and without additional text.\n"
         "Expected JSON schema:\n"
         "{{SCHEMA}}\n"
@@ -40,36 +55,78 @@ class SmartExtractorTask(BaseTask):
         for tag in tags:
             if tag == "SCHEMA":
                 prompt = prompt.replace(f"{{{{{tag}}}}}", schema_text)
-                break
+            else:
+                prompt = prompt.replace(f"{{{{{tag}}}}}", f"[ERROR] Unsupported placeholder {tag} for SmartExtractor")
 
         return prompt
 
-    # async def execute(
-    #     self,
-    #     workflow_context_port: WorkflowContextPort,
-    # ) -> TaskRecord:
-    #     """执行结构化抽取并把标准化结果写回上下文。"""
-    #     config: SmartExtractorTaskConfig = self.config
-
-    #     # 复用 BaseTask 的消息拼装与 LLM 调用链路。
-    #     record = await super().execute(workflow_context_port)
+    async def execute(
+        self,
+        workflow_context_port: WorkflowContextPort,
+    ) -> TaskRecord:
+        """执行结构化抽取并把标准化结果写回上下文。如果大模型输出非法 JSON 会自动重试。"""
+        config: SmartExtractorTaskConfig = self.config
+        messages = self.get_messages_for_llm_call(workflow_context_port)
         
-    #     # 对每个输出消息进行状态检查，确保上游推理成功后才进行抽取，否则直接返回失败状态。
-    #     for output in record.task_context.output:
-    #         if output.status == ConversationMessageStatus.FAILED:
-    #             return record
+        emit_event(
+            "TASK_START",
+            {
+                "task_id": self.config.id,
+                "task_type": self.config.type,
+            },
+        )
         
-    #     output_message = record.task_context.output[-1]
+        try:
+            llm_client = ClientFactory.get_client_instance(self.config.chatbot_config["chatbot_type"])
+            
+            parsed_data = await call_llm_with_json_retry(
+                client=llm_client,
+                messages=messages,
+                chatbot_config=self.config.chatbot_config,
+                max_retries=1,
+            )
+            
+            if "error" in parsed_data:
+                # 兜底返回，前端可感知错误并保障进程不崩溃
+                res_message: ConversationMessage = {
+                    "role": ConversationMessageRole.BOT,
+                    "content": f"[JSON_PARSE_ERROR] {parsed_data['error']}",
+                    "status": ConversationMessageStatus.FAILED,
+                }
+            else:
+                res_message: ConversationMessage = {
+                    "role": ConversationMessageRole.BOT,
+                    # 强转为标准的 json 字符串，因为最后还要交给 EvaluatorAdaptor 判断
+                    "content": json.dumps(parsed_data, ensure_ascii=False),
+                    "status": ConversationMessageStatus.COMPLETED,
+                }
 
-    #     expected_schema = SmartExtractorFactory.build_expected_schema(
-    #         config.evaluator_type_list,
-    #     )
-    #     extraction_result = SmartExtractorFactory.parse_result(
-    #         raw_response=str(output_message.content),
-    #         expected_schema=expected_schema,
-    #     )
+        except Exception as e:
+            # 同样保持 COMPLETED，通过向内容中写入标记来通知下层 Evaluator
+            res_message: ConversationMessage = {
+                "role": ConversationMessageRole.BOT,
+                "content": f"[ERROR] Unexpected extractor failure: {str(e)}",
+                "status": ConversationMessageStatus.COMPLETED,
+            }
 
-    #     # 直接覆盖为结构化 dict，供 evaluator 与 run 消费。
-    #     output_message.content = extraction_result.model_dump()
+        context: TaskContext = {
+            "input": messages,
+            "output": [res_message],
+        }
 
-    #     return record
+        record: TaskRecord = {
+            "task_config": self.config,
+            "task_context": context,
+        }
+        workflow_context_port.append_task_record(record)
+
+        emit_event(
+            "TASK_END",
+            {
+                "task_id": self.config.id,
+                "status": res_message["status"],
+                "content": res_message["content"],
+            },
+        )
+        
+        return record

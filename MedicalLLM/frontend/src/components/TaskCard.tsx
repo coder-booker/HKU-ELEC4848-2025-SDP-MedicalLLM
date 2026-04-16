@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { PromptEditor } from "./PromptEditor";
-import { TaskConfig, TaskState } from "../types";
+import { TaskConfig, TaskState, OptionsState } from "../types";
 
 type TaskCardProps = {
   task: TaskConfig;
@@ -8,7 +8,8 @@ type TaskCardProps = {
   idx: number;
   isRunning: boolean;
   availableTags: string[];
-  onTaskChange: (idx: number, field: string, value: string | string[]) => void;
+  options: OptionsState | null;
+  onTaskChange: (idx: number, field: string, value: string | string[] | any) => void;
   onRemove: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -22,6 +23,7 @@ export function TaskCard({
   idx,
   isRunning,
   availableTags,
+  options,
   onTaskChange,
   onRemove,
   onMoveUp,
@@ -142,10 +144,54 @@ export function TaskCard({
 
       {/* 配置面板 */}
       <details className="group">
-        <summary className="text-xs font-bold text-gray-500 cursor-pointer select-none hover:text-gray-700">
+        <summary className="text-xs font-bold text-gray-500 cursor-pointer select-none hover:text-gray-700 pb-1">
           Task Configuration
         </summary>
-        <div className="flex flex-col gap-3 mt-3 ml-2 border-l-2 border-gray-200 pl-3">
+        <div className="flex flex-col gap-3 mt-2 ml-2 border-l-2 border-gray-200 pl-3">
+
+          <div className="flex flex-col gap-2 p-2 bg-gray-50 rounded border border-gray-100">
+            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">LLM Settings</span>
+            <div className="flex gap-2">
+              <select
+                disabled={isRunning || !options}
+                value={task.chatbot_config?.model || ""}
+                onChange={(e) =>
+                  onTaskChange(idx, "chatbot_config", {
+                    ...task.chatbot_config,
+                    model: e.target.value,
+                  })
+                }
+                className="flex-1 text-xs bg-white border border-gray-200 rounded px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="" disabled>Select Model</option>
+                {options?.models?.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 mt-1">
+              <label className="text-[10px] font-bold text-gray-500 w-16">Temp: {task.chatbot_config?.temperature}</label>
+              <input
+                type="range"
+                min="0"
+                max="1.0"
+                step="0.1"
+                disabled={isRunning}
+                value={task.chatbot_config?.temperature || 0}
+                onChange={(e) =>
+                  onTaskChange(idx, "chatbot_config", {
+                    ...task.chatbot_config,
+                    temperature: parseFloat(e.target.value),
+                  })
+                }
+                className="flex-1 accent-blue-500"
+              />
+            </div>
+          </div>
+
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-600 block">
               Prompt Template

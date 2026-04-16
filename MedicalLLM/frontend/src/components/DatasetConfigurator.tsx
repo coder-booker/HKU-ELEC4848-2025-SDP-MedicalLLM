@@ -1,17 +1,19 @@
 import React from "react";
-import { Option, DatasetOption } from "../types";
+import { Option, DatasetOption, EvaluatorOption, OptionsState, ChatbotConfig } from "../types";
 
 export type DatasetConfigPayload = {
   dataset_type: string;
   num_of_questions: number;
   evaluator_types: string[];
+  evaluator_configs?: Record<string, Partial<ChatbotConfig>>;
 };
 
 type DatasetConfiguratorProps = {
   configs: DatasetConfigPayload[];
   onChange: (configs: DatasetConfigPayload[]) => void;
   availableDatasets: DatasetOption[];
-  availableEvaluators: Option[];
+  availableEvaluators: EvaluatorOption[];
+  options: OptionsState | null;
   disabled: boolean;
 };
 
@@ -20,7 +22,8 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
   onChange,
   availableDatasets,
   availableEvaluators,
-  disabled
+  options,
+  disabled,
 }) => {
   const handleAddDataset = () => {
     if (disabled || availableDatasets.length === 0) return;
@@ -32,7 +35,8 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
     const newConfig: DatasetConfigPayload = {
       dataset_type: dsToAdd.value,
       num_of_questions: 4,
-      evaluator_types: dsToAdd.supportedEvaluators ? [...dsToAdd.supportedEvaluators] : []
+      evaluator_types: dsToAdd.supportedEvaluators ? [...dsToAdd.supportedEvaluators] : [],
+      evaluator_configs: {},
     };
     
     onChange([...configs, newConfig]);
@@ -72,6 +76,25 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
     } else {
       updateConfig(index, { evaluator_types: [...currentEvaluators, eVal] });
     }
+  };
+
+  const handleUpdateEvaluatorConfig = (index: number, evalType: string, field: string, value: any) => {
+    if (disabled) return;
+    const newConfigs = [...configs];
+    const prevConf = newConfigs[index].evaluator_configs || {};
+    const evalConf = prevConf[evalType] || { temperature: 0.7, model: "gpt-5.4-nano", chatbot_type: "poe" };
+    
+    newConfigs[index] = {
+      ...newConfigs[index],
+      evaluator_configs: {
+        ...prevConf,
+        [evalType]: {
+          ...evalConf,
+          [field]: value
+        }
+      }
+    };
+    onChange(newConfigs);
   };
 
   return (
@@ -169,6 +192,51 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
                 {supportedEvalVals.length === 0 && (
                   <p className="text-xs text-orange-500 mt-1">Warning: No evaluators supported for this dataset.</p>
                 )}
+
+                {/* Per-Evaluator LLM Settings (Only for those requiring LLM and are currently selected) */}
+                {availableEvaluators
+                  .filter(ev => ev.requiresLLM && config.evaluator_types.includes(ev.value))
+                  .map(ev => {
+                    const evalConf = config.evaluator_configs?.[ev.value] || { model: "gpt-5.4-nano", temperature: 0.7 };
+                    return (
+                      <div key={`llmconf-${ev.value}`} className="bg-gray-50 border border-gray-200 mt-2 p-2 rounded flex flex-col gap-2">
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                          {ev.label} - LLM Settings
+                        </span>
+                        <div className="flex gap-2">
+                          <select
+                            disabled={disabled || !options}
+                            value={evalConf.model || ""}
+                            onChange={(e) => handleUpdateEvaluatorConfig(idx, ev.value, "model", e.target.value)}
+                            className="flex-1 text-xs bg-white border border-gray-200 rounded px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                          >
+                            <option value="" disabled>Select Model</option>
+                            {options?.models?.map((m) => (
+                              <option key={m.value} value={m.value}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 z-0">
+                          <label className="text-[10px] font-bold text-gray-500 w-16">
+                            Temp: {evalConf.temperature ?? 0.7}
+                          </label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1.0"
+                            step="0.1"
+                            disabled={disabled}
+                            value={evalConf.temperature ?? 0.7}
+                            onChange={(e) => handleUpdateEvaluatorConfig(idx, ev.value, "temperature", parseFloat(e.target.value))}
+                            className="flex-1 accent-blue-500"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                }
               </div>
             </div>
           );

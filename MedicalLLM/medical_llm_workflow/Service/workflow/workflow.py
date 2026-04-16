@@ -6,15 +6,27 @@
 3) 依次创建并执行任务；
 4) 汇总并打印 benchmark 结果。
 """
+import asyncio
+import uuid
+from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 from typing_extensions import TypedDict
-import uuid
-from pydantic import BaseModel
-import asyncio
 
+from pydantic import BaseModel
 
 from medical_llm_workflow.schemas import (
     ConversationMessageStatus,
+)
+from medical_llm_workflow.schemas.models import (
+    ConversationMessage,
+    ConversationMessageRole,
+)
+from medical_llm_workflow.Domain.tasks.models import (
+    TaskRecord,
+)
+from medical_llm_workflow.Domain.prompts.models import PromptTemplate
+from medical_llm_workflow.Domain.benchmark.Evaluator.base_evaluator import (
+    BaseEvaluator,
 )
 from medical_llm_workflow.Domain.tasks import (
     PlainTextTaskConfig,
@@ -33,9 +45,9 @@ from medical_llm_workflow.Domain.benchmark.Evaluator import (
 from medical_llm_workflow.Domain.benchmark.Evaluator import EvaluatorType
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetConfig, DatasetType
 from medical_llm_workflow.Domain.benchmark.EvaluatorAdaptor.evaluator_adaptor import EvaluatorAdaptor
-from medical_llm_workflow.utils import print_log, emit_event, save_question_log, get_run_dir
+from medical_llm_workflow.Infrastructure.logger import WorkflowLogger
+from medical_llm_workflow.utils import print_log, emit_event, get_run_dir
 from medical_llm_workflow.Domain.benchmark.Evaluator import EvluationBatchResult
-from medical_llm_workflow.Service.storage_service import StorageService
 
 
 
@@ -141,31 +153,151 @@ class Workflow:
         all_evaluator_types = set()
         for dataset_config in self.dataset_config_list:
             all_evaluator_types.update(dataset_config.evaluator_type_list)
+            
+        # 收集前面所有核心任务的ID作为 SmartExtractor 的上下文来源，否则 extractor 只能看到最原始题目
+        input_sources = ["question_task"] + [t.id for t in self.task_config_list]
 
         extractor_task_config = SmartExtractorTaskConfig(
             id="smart_extractor",
             chatbot_config=extractor_chatbot_config,
             evaluator_type_list=list(all_evaluator_types),
-            input_msg_sources=['question_task'],
+            input_msg_sources=input_sources,
         )
 
         return extractor_task_config
 
-    def evaluate(
+    def _group_contexts_by_dataset(
+        self,
+        all_workflow_contexts: List[WorkflowContext],
+        dataset_inlet_item_list: List[DatasetInletItem],
+    ) -> Dict[DatasetType, List[Tuple[WorkflowContext, DatasetInletItem]]]:
+        """按 dataset 划分 contexts。"""
+        dataset_context_map: Dict[DatasetType, List[Tuple[WorkflowContext, DatasetInletItem]]] = defaultdict(list)
+        for idx, ctx in enumerate(all_workflow_contexts):
+            inlet_item: DatasetInletItem = dataset_inlet_item_list[idx]
+            dataset_context_map[inlet_item.dataset_type].append((ctx, inlet_item))
+        return dataset_context_map
+
+    def _prepare_evaluation_samples(
+        self,
+        ctx_items: List[Tuple[WorkflowContext, DatasetInletItem]],
+        evaluation_schema: Dict[str, Any],
+        current_evaluator_type_list: List[EvaluatorType],
+    ) -> List[EvaluationSample]:
+        """准各待评估的样本集。"""
+        evaluation_sample_list: List[EvaluationSample] = []
+        for ctx, inlet_item in ctx_items:
+            dataset_ground_truth_dict: Dict[str, Any] = EvaluatorAdaptor.parse_dataset_question_to_evaluator_schema(
+                dataset_type=inlet_item.dataset_type,
+                dataset_json_question=inlet_item.json_question,
+                evaluator_type_list=current_evaluator_type_list,
+            )
+
+            final_task_record: TaskRecord = ctx.get_last_task_record()
+            final_output_message: ConversationMessage = final_task_record["task_context"]["output"][-1]
+            final_output_message_content: str = final_output_message["content"] if isinstance(final_output_message, dict) else final_output_message.content
+
+            llm_output_dict: Dict[str, Any] = EvaluatorAdaptor.parse_extracted_data_to_evaluator_schema(
+                text_json_response=final_output_message_content,
+                expected_schema=evaluation_schema,
+            )
+
+            evaluation_sample_list.append({
+                "workflow_context_id": ctx.get_workflow_id(),
+                "llm_output_dict": llm_output_dict,
+                "dataset_ground_truth_dict": dataset_ground_truth_dict,
+            })
+        return evaluation_sample_list
+
+    def _inject_llm_judge_records(
+        self,
+        target_ctx: WorkflowContext,
+        ev_record: Dict[str, Any],
+        evaluator_type: EvaluatorType,
+    ) -> None:
+        """只要 evaluator 返回了 llm as judge 相关的记录，就作为虚拟任务注入到任务历史上下文中。"""
+        if not ev_record.get("llm_prompt") and not ev_record.get("llm_response"):
+            return
+
+        judge_msg_input = []
+        if ev_record.get("llm_prompt"):
+            judge_msg_input.append({
+                "role": ConversationMessageRole.USER.value,
+                "content": str(ev_record.get("llm_prompt")),
+                "status": ConversationMessageStatus.NORMAL.value,
+            })
+        
+        judge_msg_output = []
+        if ev_record.get("llm_response"):
+            judge_msg_output.append({
+                "role": ConversationMessageRole.BOT.value,
+                "content": str(ev_record.get("llm_response")),
+                "status": ConversationMessageStatus.NORMAL.value,
+            })
+        
+        target_ctx.append_task_record({
+            "task_config": PlainTextTaskConfig(
+                id=f"evaluator_{evaluator_type.value}",
+                prompt_template=PromptTemplate(text=""),
+            ),
+            "task_context": {
+                "input": judge_msg_input,
+                "output": judge_msg_output,
+            },
+        })
+
+    def _append_evaluation_log(
+        self,
+        dataset_type: DatasetType,
+        question_index: int,
+        evaluator_type: EvaluatorType,
+        ev_record: Dict[str, Any],
+    ) -> None:
+        """追加记录此评估器使用的大模型作为裁判过程的日志到底层文件。"""
+        # print("Appending LLM judge log for evaluator:", evaluator_type.value)
+        # print("LLM judge prompt:", ev_record)
+        if not ev_record.get("llm_prompt") and not ev_record.get("llm_response"):
+            # print("====================================")
+            # print("No LLM judge log found in evaluation record, skipping append.")
+            return
+        
+            
+        judge_msg_input = []
+        if ev_record.get("llm_prompt"):
+            judge_msg_input.append({
+                "role": ConversationMessageRole.USER.value,
+                "content": str(ev_record.get("llm_prompt")),
+                "status": ConversationMessageStatus.NORMAL.value,
+            })
+            
+        judge_msg_output = []
+        if ev_record.get("llm_response"):
+            judge_msg_output.append({
+                "role": ConversationMessageRole.BOT.value,
+                "content": str(ev_record.get("llm_response")),
+                "status": ConversationMessageStatus.NORMAL.value,
+            })
+            
+        WorkflowLogger.append_evaluation_log(
+            dataset_type=dataset_type.value if hasattr(dataset_type, "value") else str(dataset_type),
+            question_index=question_index,
+            evaluator_name=evaluator_type.value,
+            input_msgs=judge_msg_input,
+            output_msgs=judge_msg_output,
+        )
+
+    async def evaluate(
         self,
         all_workflow_contexts: List[WorkflowContext],
         dataset_inlet_item_list: List[DatasetInletItem],
     ) -> List[EvaluationResultItemForReport]:
         """执行每个数据集对应的 evaluator，并在最后融合输出统一报告。"""
-        # 收集所有的 evaluator 到一个大的结果列表里
+        # print("Starting evaluation of all workflow contexts...")
         evaluation_result_list: List[EvaluationResultItemForReport] = []
-        
-        # 按照 dataset 划分 contexts
-        from collections import defaultdict
-        dataset_context_map: Dict[DatasetType, List[Tuple[WorkflowContext, DatasetInletItem]]] = defaultdict(list)
-        for idx, ctx in enumerate(all_workflow_contexts):
-            inlet_item: DatasetInletItem = dataset_inlet_item_list[idx]
-            dataset_context_map[inlet_item.dataset_type].append((ctx, inlet_item))
+        dataset_context_map = self._group_contexts_by_dataset(
+            all_workflow_contexts=all_workflow_contexts,
+            dataset_inlet_item_list=dataset_inlet_item_list,
+        )
 
         for dataset_config in self.dataset_config_list:
             dataset_type: DatasetType = dataset_config.dataset_type
@@ -177,40 +309,51 @@ class Workflow:
             if not current_evaluator_type_list:
                 continue
 
-            # 为当前 dataset 构建抽取 expected schema（只针对它的 evaluators）
             evaluation_schema: Dict[str, Any] = EvaluatorAdaptor.build_expected_schema(current_evaluator_type_list)
-
-            evaluation_sample_list: List[EvaluationSample] = []
-            for ctx, inlet_item in ctx_items:
-                dataset_ground_truth_dict: Dict[str, Any] = EvaluatorAdaptor.parse_dataset_question_to_evaluator_schema(
-                    dataset_type=inlet_item.dataset_type,
-                    dataset_json_question=inlet_item.json_question,
-                    evaluator_type_list=current_evaluator_type_list,
-                )
-
-                from medical_llm_workflow.Domain.tasks.models import TaskRecord
-                final_task_record: TaskRecord = ctx.get_last_task_record()
-                
-                from medical_llm_workflow.schemas.models import ConversationMessage
-                final_output_message: ConversationMessage = final_task_record["task_context"]["output"][-1]
-                final_output_message_content: str = final_output_message["content"] if isinstance(final_output_message, dict) else final_output_message.content
-
-                llm_output_dict: Dict[str, Any] = EvaluatorAdaptor.parse_extracted_data_to_evaluator_schema(
-                    text_json_response=final_output_message_content,
-                    expected_schema=evaluation_schema,
-                )
-
-                evaluation_sample_list.append({
-                    "llm_output_dict": llm_output_dict,
-                    "dataset_ground_truth_dict": dataset_ground_truth_dict,
-                })
+            evaluation_sample_list = self._prepare_evaluation_samples(
+                ctx_items=ctx_items,
+                evaluation_schema=evaluation_schema,
+                current_evaluator_type_list=current_evaluator_type_list,
+            )
 
             for evaluator_type in current_evaluator_type_list:
-                from medical_llm_workflow.Domain.benchmark.Evaluator.base_evaluator import BaseEvaluator
-                evaluator: BaseEvaluator = EvaluatorFactory.create(evaluator_type=evaluator_type)
+                # 给每个 evaluator 提取可能的前端自定义 LLM 配置 (可选)
+                evaluator_configs_map = getattr(dataset_config, "evaluator_configs", {})
+                chatbot_config = evaluator_configs_map.get(evaluator_type.value)
+
+                evaluator: BaseEvaluator = EvaluatorFactory.create(
+                    evaluator_type=evaluator_type,
+                    chatbot_config=chatbot_config,
+                )
+
+                if evaluator is None:
+                    continue  # 工厂卫语句触发兜底，跳过不存在的评测器
+
+                evaluation_result: EvluationBatchResult = await evaluator.evaluate_batch(sample_list=evaluation_sample_list)
                 
-                from medical_llm_workflow.Domain.benchmark.Evaluator.models import EvluationBatchResult
-                evaluation_result: EvluationBatchResult = evaluator.evaluate_batch(sample_list=evaluation_sample_list)
+                # 把 Evaluator 评测中的 log 追加回所属的题目的 WorkflowContext 历史中
+                for idx, ev_record in enumerate(evaluation_result["records"]):
+                    ctx_id = evaluation_sample_list[idx]["workflow_context_id"]
+                    
+                    target_ctx_item_tuple = next(t for t in ctx_items if t[0].get_workflow_id() == ctx_id)
+                    target_ctx = target_ctx_item_tuple[0]
+                    inlet_item = target_ctx_item_tuple[1]
+                    
+                    self._inject_llm_judge_records(
+                        target_ctx=target_ctx,
+                        ev_record=ev_record,
+                        evaluator_type=evaluator_type,
+                    )
+                    
+                    display_index = dataset_inlet_item_list.index(inlet_item) + 1
+                    
+                    self._append_evaluation_log(
+                        dataset_type=dataset_type,
+                        question_index=display_index,
+                        evaluator_type=evaluator_type,
+                        ev_record=ev_record,
+                    )
+
                 chart_data: Dict[str, Any] = evaluator.build_chart_data(evaluation_result)
                 report_text: str = evaluator.build_report_markdown(evaluation_result)
 
@@ -266,8 +409,92 @@ class Workflow:
 
         return workflow_context
 
-    async def run(self) -> Tuple[List[WorkflowContext], Dict[str, Any]]:
-        """初始化 dataset 与 evaluator，执行全量工作流并返回全部上下文。"""
+    async def run_single(
+        self,
+        index: int,
+        dataset_inlet_item: DatasetInletItem,
+        inlet_task: TaskConfig,
+        total_questions: int,
+        semaphore: asyncio.Semaphore,
+        progress_state: Dict[str, int],
+    ) -> WorkflowContext:
+        """
+        执行单道题目的完整工作流封装。
+        
+        参数:
+        - index: 原始列表索引,
+        - dataset_inlet_item: 当前题目的输入数据,
+        - inlet_task: 注入任务配置,
+        - smart_extractor_task_config: 智能提取器配置,
+        - total_questions: 总题目数量,
+        - semaphore: 并发控制信号量,
+        - progress_state: 用于记录和同步完成进度的可变字典,
+        """
+        # 使用基于 1 索引的友好题目标号进行界面展示传递
+        current_dataset = dataset_inlet_item.dataset_type
+        display_index = index + 1
+        
+        # 在单题执行前发送“题目开始”事件，携带所属数据集类型
+        emit_event(
+            "QUESTION_STARTED",
+            {
+                "question_index": display_index,
+                "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+            },
+        )
+        
+        async with semaphore:
+            context = WorkflowContext(workflow_id=self.id)
+            try:
+                # 触发每题的单线程任务
+                await self.fire_tasks_execution(
+                    workflow_context=context,
+                    inlet_tasks=[inlet_task],
+
+                )
+                # 每跑完一道题就立刻生成独立日志存入独立文件
+                WorkflowLogger.log_question(
+                    dataset_type=current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                    question_index=display_index,
+                    workflow_context=context,
+                )
+                
+                progress_state["completed"] += 1
+                
+                # 向前端抛出题目完成进度以及该题的基本信息
+                emit_event(
+                    "QUESTION_COMPLETED",
+                    {
+                        "completed_questions": progress_state["completed"],
+                        "total_questions": total_questions,
+                        "question_index": display_index,
+                        "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                    },
+                )
+                return context
+            except Exception as e:
+                print_log(f"Error processing question {display_index}: {e}", prefix="[ERROR]")
+                
+                # Even if there's an error, save the partial context and the error
+                WorkflowLogger.log_question(
+                    dataset_type=current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                    question_index=display_index,
+                    workflow_context=context,
+                    error=str(e),
+                )
+                
+                emit_event(
+                    "QUESTION_FAILED",
+                    {
+                        "question_index": display_index,
+                        "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                        "error": str(e),
+                    },
+                )
+                return e
+
+    async def run_batch(self) -> Tuple[List[WorkflowContext], Dict[str, Any]]:
+        """初始化 dataset 与 evaluator，全量执行批量工作流并返回全部上下文。"""
         all_workflow_contexts: List[WorkflowContext] = []
 
         # ---- dataset ----
@@ -291,92 +518,37 @@ class Workflow:
             )
             inlet_tasks.append(inlet_task)
 
-        smart_extractor_task_config = self.init_extractor()
-
+        # 智能抽取器现在由前端配置并作为普通任务传递进来，此处移除写死附加
+        
+        total_questions = len(dataset_inlet_item_list)
+        
         # 逐题执行 fire，使用信号量控制并发数。
         emit_event(
             "PHASE_START",
             {
                 "phase": "execution",
                 "message": "Running tasks concurrently",
-                "total_questions": len(dataset_inlet_item_list),
+                "total_questions": total_questions,
             },
         )
         print_log("Executing workflows for each question concurrently...", prefix="[WORKFLOW]", debug=True)
         
         semaphore = asyncio.Semaphore(5)
-        completed_count = 0
-        
-        async def process_question(index: int) -> WorkflowContext:
-            nonlocal completed_count
-            
-            # 使用基于 1 索引的友好题目标号进行界面展示传递
-            current_dataset = dataset_inlet_item_list[index].dataset_type
-            display_index = index + 1
-            
-            # 在单题执行前发送“题目开始”事件，携带所属数据集类型
-            emit_event(
-                "QUESTION_STARTED",
-                {
-                    "question_index": display_index,
-                    "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
-                },
-            )
-            
-            async with semaphore:
-                context = WorkflowContext(workflow_id=self.id)
-                try:
-                    # 触发每题的单线程任务
-                    await self.fire_tasks_execution(
-                        workflow_context=context,
-                        inlet_tasks=[inlet_tasks[index]],
-                        outlet_tasks=[smart_extractor_task_config],
-                    )
-                    # 每跑完一道题就立刻生成独立日志存入独立文件
-                    save_question_log(
-                        dataset_type=current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
-                        question_index=display_index,
-                        workflow_context=context,
-                    )
-                    completed_count += 1
-                    # mock error for testing
-                    # if completed_count == 2:
-                    #     raise Exception("Mock error for testing error handling and frontend notification.")
-                    
-                    # 向前端抛出题目完成进度以及该题的基本信息
-                    emit_event(
-                        "QUESTION_COMPLETED",
-                        {
-                            "completed_questions": completed_count,
-                            "total_questions": len(dataset_inlet_item_list),
-                            "question_index": display_index,
-                            "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
-                        },
-                    )
-                    return context
-                except Exception as e:
-                    print_log(f"Error processing question {display_index}: {e}", prefix="[ERROR]")
-                    
-                    # Even if there's an error, save the partial context and the error
-                    save_question_log(
-                        dataset_type=current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
-                        question_index=display_index,
-                        workflow_context=context,
-                        error=str(e),
-                    )
-                    
-                    emit_event(
-                        "QUESTION_FAILED",
-                        {
-                            "question_index": display_index,
-                            "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
-                            "error": str(e),
-                        },
-                    )
-                    return e
+        progress_state = {"completed": 0}
                     
         # 并发执行所有题目并保持顺序
-        tasks_to_run = [process_question(i) for i in range(len(dataset_inlet_item_list))]
+        tasks_to_run = [
+            self.run_single(
+        # smart_extractor 已作为配置中的最后一项传入 tasks_config_list 中，此处移除特权传递
+                index=i,
+                dataset_inlet_item=dataset_inlet_item_list[i],
+                inlet_task=inlet_tasks[i],
+                total_questions=total_questions,
+                semaphore=semaphore,
+                progress_state=progress_state,
+            )
+            for i in range(total_questions)
+        ]
         gathered_results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
         
         all_workflow_contexts: List[WorkflowContext] = []
@@ -399,99 +571,18 @@ class Workflow:
         
         if len(all_workflow_contexts) == 0:
             print_log("No questions completed successfully. Skipping evaluation.", prefix="[WORKFLOW]")
-            return [], {}
+            return [], {"error": "[SKIPPED] No questions completed successfully, evaluation aborted."}
 
-        evaluation_result_list = self.evaluate(
+        evaluation_result_list = await self.evaluate(
             all_workflow_contexts=all_workflow_contexts,
             dataset_inlet_item_list=successful_inlet_items,
         )
         
-        report_info = self.build_report(
+        report_info = WorkflowLogger.log_evaluation_report(
             evaluation_result_list=evaluation_result_list,
             dataset_inlet_item_list=successful_inlet_items,
         )
         print_log(f"Final evaluation report generated: {report_info['report_path']}", prefix="[WORKFLOW]", debug=True)
 
         return all_workflow_contexts, report_info
-
-    def build_report(
-        self,
-        evaluation_result_list: List[EvaluationResultItemForReport],
-        dataset_inlet_item_list: List[DatasetInletItem],
-    ) -> Dict[str, Any]:
-        
-        # 所有 evaluator 都结束后，再融合成一份总报告。
-        merged_report_lines: List[str] = []
-        merged_report_lines.append("# Comprehensive Evaluation Report")
-        merged_report_lines.append("")
-        
-        total_samples = len(dataset_inlet_item_list)
-        merged_report_lines.append(f"- Total Samples Run: {total_samples}")
-        merged_report_lines.append(f"- Total Evaluation Tasks: {len(evaluation_result_list)}")
-        merged_report_lines.append("")
-
-        from collections import defaultdict
-        dataset_eval_map = defaultdict(list)
-        for item in evaluation_result_list:
-            dataset_eval_map[item["dataset_type"]].append(item)
-
-        for dataset_type, eval_items in dataset_eval_map.items():
-            merged_report_lines.append(f"# Dataset: {dataset_type}")
-            merged_report_lines.append("")
-            
-            # Print summaries for all evaluators
-            for evaluation_item in eval_items:
-                evaluator_name = evaluation_item["evaluator_name"]
-                report_text = evaluation_item["report_text"]
-                # merged_report_lines.append(f"## Evaluator: {evaluator_name} Summary")
-                merged_report_lines.append(report_text)
-                merged_report_lines.append("")
-
-            merged_report_lines.append("## Details with Questions (Workflow Level)")
-            merged_report_lines.append("")
-            
-            # 找到对应这个 dataset 的所有 inlet_items 来对齐 record。由于顺序在 evaluate 时是固定的。
-            matched_inlet_items = [inlet for inlet in dataset_inlet_item_list if inlet.dataset_type.value == dataset_type or str(inlet.dataset_type) == dataset_type]
-            
-            # 由于所有 evaluator 处理同样的提取结果和同样的问题记录，我们取第一个 evaluator 的 records 作为基准拿题面和预测
-            first_evaluator_records = eval_items[0]["result"]["records"]
-
-            for idx, first_record in enumerate(first_evaluator_records):
-                # 提取对应题目并截取前 100 个字符保证简洁
-                inlet_item = matched_inlet_items[idx]
-                short_question = inlet_item.text_question.replace("\n", " ")
-                
-                # record 包含 prediction, ground_truth 和 score
-                pred = str(first_record.get('prediction', 'No prediction'))
-                truth = str(first_record.get('ground_truth', 'Unknown'))
-                
-                # 收集各个 evaluator 给这道题打的分数和独立日志
-                scores_str = []
-                for ev_item in eval_items:
-                    ev_name = ev_item["evaluator_name"]
-                    ev_record = ev_item["result"]["records"][idx]
-                    scores_str.append(f"{ev_name}: {ev_record['score']}")
-                
-                merged_report_lines.append(f"**Sample {idx + 1}**")
-                merged_report_lines.append(f"- **Scores**: {', '.join(scores_str)}")
-                merged_report_lines.append(f"- **Question**: {short_question}")
-                merged_report_lines.append(f"- **LLM Prediction**: {pred}")
-                merged_report_lines.append(f"- **Ground Truth**: {truth}")
-                merged_report_lines.append("")
-        
-        print_log("Evaluation Report Generated", prefix="[EVALUATOR]", debug=True)
-        # print_log("\n".join(merged_report_lines), prefix="[EVALUATOR]", debug=True)
-        
-        run_dir = get_run_dir()
-        
-        # 将总结评测报告委托给独立存储服务落地
-        merged_report_path = StorageService.write_evaluation_report(
-            run_dir=run_dir,
-            report_content="\n".join(merged_report_lines),
-        )
-
-        return {
-            "report_path": merged_report_path,
-            "results": evaluation_result_list,
-        }
         

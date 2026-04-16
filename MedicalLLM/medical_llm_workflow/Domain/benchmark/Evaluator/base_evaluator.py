@@ -12,6 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from statistics import mean
 from typing import Any, Callable, Dict, List, Optional
+import asyncio
 
 from .models import (
     EvluationBatchResult,
@@ -24,6 +25,7 @@ from .models import (
 )
 from medical_llm_workflow.app_settings import AppSettings
 import os
+import inspect
 
 DEFAULT_REPORT_PATH = os.path.join(AppSettings.RESULT_DIR, AppSettings.EVALUATION_REPORT_FILENAME)
 DEFAULT_CHART_PATH = os.path.join(AppSettings.RESULT_DIR, AppSettings.EVALUATION_CHART_FILENAME)
@@ -42,9 +44,18 @@ class BaseEvaluator(ABC):
         self,
         # params: Optional[Dict[str, Any]] = None,
         compare_fn: Optional[CompareFn] = None,
+        chatbot_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         # self.params: Dict[str, Any] = params or {}
         self.compare_fn: CompareFn = compare_fn or self.default_compare
+        
+        # 兜底默认 LLM 配置，针对 LLM-as-a-judge 的场景
+        self.chatbot_config = chatbot_config or {
+            "chatbot_type": "poe",
+            "model": "gpt-5.4-nano",
+            "temperature": 0.7,
+            "max_tokens": 512,
+        }
 
     @abstractmethod
     def default_compare(self, prediction: Any, ground_truth: Any) -> float:
@@ -102,15 +113,28 @@ class BaseEvaluator(ABC):
         return "\n".join(lines)
     
     
-    def evaluate_one(self, sample: EvaluationSample) -> EvluationRecord:
-        """评分单条样本。"""
-        score = float(
-            self.compare_fn(
+    async def evaluate_one(self, sample: EvaluationSample) -> EvluationRecord:
+        """评分单条样本。兼容同步和异步两种对比函数。"""
+        detail = {}
+        if inspect.iscoroutinefunction(self.compare_fn):
+            # 将原始输入数据携带，供有需要的评估器返回其运行过程或 Prompt 细节
+            score, optional_detail = await self.compare_fn(
                 self.normalize_compare_element(sample["llm_output_dict"]),
                 self.normalize_compare_element(sample["dataset_ground_truth_dict"]),
             )
-        )
+            detail = optional_detail or {}
+        else:
+            ret = self.compare_fn(
+                self.normalize_compare_element(sample["llm_output_dict"]),
+                self.normalize_compare_element(sample["dataset_ground_truth_dict"]),
+            )
+            if isinstance(ret, tuple) and len(ret) == 2:
+                score, detail = ret
+            else:
+                score = ret
+                
         # 统一钳制到 [0, 1]，避免注入函数异常返回污染统计。
+        score = float(score)
         score = max(0.0, min(1.0, score))
         
         return {
@@ -118,24 +142,16 @@ class BaseEvaluator(ABC):
             "score": score,
             "prediction": sample["llm_output_dict"],
             "ground_truth": sample["dataset_ground_truth_dict"],
+            "detail": detail,
+            "llm_prompt": detail.get("llm_prompt"),
+            "llm_response": detail.get("llm_response"),
         }
 
-    def evaluate_batch(self, sample_list: List[EvaluationSample]) -> EvluationBatchResult:
+    async def evaluate_batch(self, sample_list: List[EvaluationSample]) -> EvluationBatchResult:
         """批量评分。"""
-        # if not sample_list:
-        #     return EvluationBatchResult(
-        #         evaluator_name=self.evaluator_name,
-        #         metric_name=self.metric_name,
-        #         params=self.params,
-        #         total_samples=0,
-        #         average_score=0.0,
-        #         min_score=0.0,
-        #         max_score=0.0,
-        #         records=[],
-        #         summary={"note": "No sample_list provided."},
-        #     )
 
-        records = [self.evaluate_one(sample) for sample in sample_list]
+        tasks = [self.evaluate_one(sample) for sample in sample_list]
+        records = await asyncio.gather(*tasks)
         scores = [record["score"] for record in records]
 
         return {

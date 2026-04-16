@@ -35,7 +35,7 @@ class PrecisionEvaluator(BaseEvaluator):
         self,
         llm_output_dict: Dict[str, Any],
         dataset_ground_truth_dict: Dict[str, Any],
-    ) -> float:
+    ) -> tuple[float, Dict[str, Any]]:
         """
         单条样本级比对函数。
         """
@@ -44,9 +44,12 @@ class PrecisionEvaluator(BaseEvaluator):
         gold_text = dataset_ground_truth_dict.get("precision_answer", "")
         
         # 相等则说明当前选项预测正确
-        score = 1.0 if pred_text == gold_text else 0.0
+        score = 1.0 if str(pred_text).strip() == str(gold_text).strip() else 0.0
         
-        return score
+        return score, {
+            "prediction_extracted": pred_text,
+            "ground_truth_extracted": gold_text,
+        }
         
     def _build_summary(
         self,

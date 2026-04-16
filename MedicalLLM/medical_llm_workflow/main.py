@@ -5,9 +5,8 @@
 """
 import asyncio
 import traceback
-import datetime
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 from medical_llm_workflow.Domain.tasks import TaskConfig, TaskContext
@@ -24,20 +23,22 @@ from medical_llm_workflow.utils import print_log, run_dir_var
 
 # 全局默认配置：作为以后后端服务的默认回退参数，各函数直接在此取值
 DEFAULT_DATASET_CONFIG = [
-    DatasetConfig(
-        dataset_type=DatasetType.MED_QA,
-        num_of_questions=1,
-        evaluator_type_list=[
-            EvaluatorType.ACCURACY,
-            EvaluatorType.PRECISION,
-        ],
-    ),
+    # DatasetConfig(
+    #     dataset_type=DatasetType.MED_QA,
+    #     num_of_questions=1,
+    #     evaluator_type_list=[
+    #         EvaluatorType.ACCURACY,
+    #         EvaluatorType.PRECISION,
+    #     ],
+    # ),
     DatasetConfig(
         dataset_type=DatasetType.PUBMED,
         num_of_questions=1,
         evaluator_type_list=[
-            EvaluatorType.ACCURACY,
-            EvaluatorType.PRECISION,
+            # EvaluatorType.ACCURACY,
+            # EvaluatorType.PRECISION,
+            EvaluatorType.CONSISTENCY,
+            # EvaluatorType.CLARITY,
         ],
     ),
 ]
@@ -73,7 +74,7 @@ async def run_core_workflow(
     try:
         # 执行工作流全流程
         print_log("Running workflow...", prefix="[WORKFLOW]", debug=True)
-        return await workflow.run()
+        return await workflow.run_batch()
     except Exception as e:
         print_log(f"Error occurred: {e}\n{traceback.print_exc()}", prefix="[WORKFLOW]", debug=True)
         raise
@@ -90,8 +91,9 @@ async def main():
     
     task_config_list = recipe.build_task_configs()
     
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(AppSettings.RESULT_DIR, ts)
+    # 统一使用最新覆写模式的工作流目录
+    from medical_llm_workflow.Service.storage_service import StorageService
+    run_dir = StorageService.init_run_dir()
     dir_token = run_dir_var.set(run_dir)
     
     try:
