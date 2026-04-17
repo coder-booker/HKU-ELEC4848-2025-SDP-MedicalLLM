@@ -7,23 +7,6 @@ from enum import Enum
 from typing_extensions import TypedDict
 
 
-# class EZSerializableModel(BaseModel):
-#     @model_serializer(mode='wrap')
-#     def serialize_none_as_empty(self, handler):
-#         # handler(self) 会先将模型正常序列化为字典
-#         dumped = handler(self)
-#         # 然后将结果中的 None 替换为 ""
-#         if isinstance(data, dict):
-#             return {
-#                 k: ("" if v is None else replace_none_with_empty_str(v)) 
-#                 for k, v in data.items()
-#             }
-#         elif isinstance(data, list):
-#             return [replace_none_with_empty_str(item) for item in data]
-#         return data
-#         return replace_none_with_empty_str(dumped)
-
-
 # language
 class LanguageType(str, Enum): # TODO：现在先不允许选语言，之后再搞
     """支持的语言枚举。"""
