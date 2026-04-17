@@ -29,7 +29,7 @@ export function SmartExtractorCard({
     <>
     <div
       onClick={handleOpenConfig}
-      className={`relative border rounded-xl p-5 flex flex-col gap-4 transition-colors shrink-0 snap-center w-[350px] cursor-pointer hover:shadow-md h-full ${
+      className={`relative border rounded-xl p-5 flex flex-col gap-4 transition-colors shrink-0 snap-center w-[350px] cursor-pointer hover:shadow-md ${
         isRunning
           ? "bg-purple-50 border-purple-300 shadow-[0_0_15px_rgba(192,132,252,0.3)]"
           : "bg-gradient-to-br from-indigo-50 to-purple-50 border-purple-200 shadow-sm"
@@ -50,8 +50,8 @@ export function SmartExtractorCard({
           </div>
         </div>
 
-        <div className="text-sm font-bold text-gray-800 break-all leading-snug">
-          Data Extractor (Auto)
+        <div className="text-base font-bold text-gray-800 break-all leading-snug flex items-center" style={{ minHeight: "28px" }}>
+          Smart Data Extractor (Auto)
         </div>
       </div>
     </div>

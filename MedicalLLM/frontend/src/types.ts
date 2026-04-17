@@ -12,7 +12,6 @@ export type PromptTemplate = {
 export type TaskConfig = {
   id: string;
   type: string;
-  medical_type: string;
   chatbot_config: ChatbotConfig;
   prompt_template?: PromptTemplate;
   input_msg_sources?: string[];

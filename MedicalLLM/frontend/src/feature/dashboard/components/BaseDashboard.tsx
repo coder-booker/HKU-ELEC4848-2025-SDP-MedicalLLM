@@ -32,9 +32,9 @@ export function BaseDashboard({ result }: BaseDashboardProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-2 overflow-y-auto pr-1 pb-1 flex-1">
-        <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg border border-blue-100 flex flex-col justify-center items-start text-left">
+        <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg border border-blue-100 flex flex-col justify-center items-start text-left col-span-2">
           <span className="text-[10px] uppercase font-semibold text-blue-400">Avg Score</span>
-          <span className="text-sm font-bold">{(result.average_score * 100).toFixed(1)}%</span>
+          <span className="text-2xl font-bold">{result.average_score}</span>
         </div>
         
         {summaryEntries.map(([key, value], idx) => {
@@ -43,10 +43,10 @@ export function BaseDashboard({ result }: BaseDashboardProps) {
           return (
             <div
               key={idx}
-              className="bg-gray-50 text-gray-800 px-4 py-2 rounded-lg border border-gray-200 flex flex-col justify-center items-start text-left truncate"
+              className="bg-gray-50 text-gray-800 px-4 py-2 rounded-lg border border-gray-200 flex flex-col justify-center items-start text-left shrink-0 break-all"
             >
               <span className="text-[10px] uppercase font-semibold capitalize text-gray-400">{key.replace(/_/g, ' ')}</span>
-              <span className="font-bold text-sm w-full truncate">{displayValue}</span>
+              <span className="font-bold text-sm w-full whitespace-normal">{displayValue}</span>
             </div>
           );
         })}

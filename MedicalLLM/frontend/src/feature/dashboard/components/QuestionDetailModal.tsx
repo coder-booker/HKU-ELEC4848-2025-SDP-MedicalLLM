@@ -70,12 +70,12 @@ export function QuestionDetailModal(props: QuestionDetailModalProps) {
                 </div>
               )}
 
-              {questionDetail.evaluator_results && (
+              {questionDetail.evaluator_results && Object.keys(questionDetail.evaluator_results).length > 0 && (
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Evaluator Outcomes</span>
                   <div className="flex flex-col gap-3 mt-2">
-                    {Object.entries(questionDetail.evaluator_results).map(([key, res]: [string, any]) => (
-                      <div key={key} className="bg-blue-50/50 p-3 rounded border border-blue-100 text-xs">
+                    {Object.entries(questionDetail.evaluator_results).map(([key, res]: [string, any], idx) => (
+                      <div key={`${key}-${idx}`} className="bg-blue-50/50 p-3 rounded border border-blue-100 text-xs">
                         <span className="font-bold text-blue-800 uppercase text-[10px] bg-blue-100 px-1.5 py-0.5 rounded mr-2">{key.toUpperCase()}</span>
                         <span className="font-medium text-gray-700">Score: {res.score}</span>
                         {res.reason && <p className="text-gray-600 mt-1 italic">{res.reason}</p>}

@@ -9,7 +9,7 @@ import os
 from typing import Any, Dict, List, Tuple
 
 
-from medical_llm_workflow.Domain.tasks import TaskConfig, TaskContext
+from medical_llm_workflow.Domain.tasks import TaskConfig, TaskContext, SmartExtractorTaskConfig
 from medical_llm_workflow.Domain.workflow_context.workflow_context import WorkflowContext
 from medical_llm_workflow.Domain.recipes import RecipeFactory, RecipeType
 from medical_llm_workflow.Domain.benchmark.Dataset import DatasetType, DatasetConfig
@@ -35,7 +35,7 @@ DEFAULT_DATASET_CONFIG = [
         dataset_type=DatasetType.PUBMED,
         num_of_questions=1,
         evaluator_type_list=[
-            # EvaluatorType.ACCURACY,
+            EvaluatorType.ACCURACY,
             # EvaluatorType.PRECISION,
             EvaluatorType.CONSISTENCY,
             # EvaluatorType.CLARITY,
@@ -52,7 +52,8 @@ DEFAULT_CHATBOT_CONFIG = {
 }
 
 # 全局默认配置：执行的流程配方
-DEFAULT_RECIPE_TYPE = RecipeType.MEDICAL_REASONING_3_STEPS
+DEFAULT_RECIPE_TYPE = RecipeType.TWO_STAGE_VERIFICATION
+# DEFAULT_RECIPE_TYPE = RecipeType.MEDICAL_REASONING_3_STEPS
 
 async def run_core_workflow(
     task_config_list: List[TaskConfig],
@@ -90,6 +91,22 @@ async def main():
     )
     
     task_config_list = recipe.build_task_configs()
+    
+    # 提取所有使用到的 evaluator type
+    all_evaluator_types = set()
+    for dataset_config in DEFAULT_DATASET_CONFIG:
+        all_evaluator_types.update(dataset_config.evaluator_type_list)
+        
+    # 添加 SmartExtractor 作为最后的结构化提取和评估节点
+    # 它的输入来源为前面的所有核心任务的 ID，以及原始问题
+    input_sources = ["question_task"] + [t.id for t in task_config_list]
+    extractor_config = SmartExtractorTaskConfig(
+        id="smart_extractor",
+        chatbot_config=DEFAULT_CHATBOT_CONFIG,
+        evaluator_type_list=list(all_evaluator_types),
+        input_msg_sources=input_sources,
+    )
+    task_config_list.append(extractor_config)
     
     # 统一使用最新覆写模式的工作流目录
     from medical_llm_workflow.Service.storage_service import StorageService

@@ -164,7 +164,7 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
 
               {/* Evaluators */}
               <div className="flex flex-col gap-2 w-2/3 border-l border-gray-100 pl-6 pr-4">
-                <label className="font-medium text-gray-500 text-[11px] uppercase tracking-wider">Active Evaluators</label>
+                <label className="font-medium text-balck-500 text-[15px] uppercase tracking-wider">Active Evaluators</label>
                 <div className="flex flex-wrap gap-2">
                   {availableEvaluators.map(ev => {
                     const isSupported = supportedEvalVals.includes(ev.value);

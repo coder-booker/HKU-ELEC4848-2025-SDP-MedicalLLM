@@ -34,7 +34,7 @@ export function QuestionStatusList({ questions, onViewDetail }: QuestionStatusLi
               {q.status.toUpperCase()}
             </span>
           </div>
-          <div className="text-xs text-gray-500">Dataset: {q.datasetType}</div>
+          <div className="text-xs text-gray-500">From: {q.datasetType}</div>
         </div>
       ))}
     </div>

@@ -66,7 +66,7 @@ export default function Home() {
   
   const [globalModel] = useState("gpt-5.4-nano");
   const [globalChatbotType] = useState("poe");
-  const [recipeType, setRecipeType] = useState("medical_reasoning_3_steps");
+  const [recipeType, setRecipeType] = useState("");
 
   // 管理任务列表配置，前端自治
   const [tasks, setTasks] = useState<TaskConfig[]>([]);
@@ -74,7 +74,6 @@ export default function Home() {
   const [extractorConfig, setExtractorConfig] = useState<TaskConfig>({
     id: "smart_extractor",
     type: "smart_extractor",
-    medical_type: "default",
     chatbot_config: {
       chatbot_type: "poe",
       model: "gpt-5.4-nano",
@@ -92,11 +91,11 @@ export default function Home() {
       })
       .then((data) => {
         setOptions(data);
-        // 初始化时自动填充默认 Recipe 的配置
-        const defaultRecipe = data.recipes?.find((r: RecipeOption) => r.value === "medical_reasoning_3_steps");
-        if (defaultRecipe && defaultRecipe.tasks) {
-          setTasks(JSON.parse(JSON.stringify(defaultRecipe.tasks)));
-        }
+        // 初始化时不自动填充任何 Recipe
+        // const defaultRecipe = data.recipes?.find((r: RecipeOption) => r.value === "two_stage_verification");
+        // if (defaultRecipe && defaultRecipe.tasks) {
+        //   setTasks(JSON.parse(JSON.stringify(defaultRecipe.tasks)));
+        // }
         setError(""); // Clear error if fetch is successful
       })
       .catch((err) => {
@@ -162,7 +161,6 @@ export default function Home() {
     const newTask = {
       id: generatedId,
       type: "single_agent",
-      medical_type: "default",
       chatbot_config: {
         chatbot_type: globalChatbotType,
         model: globalModel,

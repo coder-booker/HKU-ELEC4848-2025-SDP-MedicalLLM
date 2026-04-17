@@ -46,10 +46,10 @@ export function PrecisionDashboard({ result }: PrecisionDashboardProps) {
         </div>
       </div>
       
-      <div className="flex gap-3 mb-5">
-        <div className="bg-blue-50 text-blue-800 px-3 py-1.5 rounded-lg border border-blue-100 flex justify-between items-center flex-1">
-          <span className="text-[10px] uppercase font-semibold">Macro Precision</span>
-          <span className="text-sm font-bold">{(summary.macro_precision * 100).toFixed(1)}%</span>
+      <div className="flex flex-col gap-3 mb-4">
+        <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-lg border border-blue-100 flex flex-col justify-center items-start text-left w-full">
+          <span className="text-[10px] uppercase font-semibold text-blue-400">Macro Precision</span>
+          <span className="text-2xl font-bold">{(summary.macro_precision * 100).toFixed(1)}%</span>
         </div>
       </div>
 

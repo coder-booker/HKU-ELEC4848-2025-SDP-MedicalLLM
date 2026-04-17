@@ -6,6 +6,9 @@ from medical_llm_workflow.Domain.recipes.models import RecipeType
 from medical_llm_workflow.Domain.recipes.all_recipes.medical_reasoning_3_steps_recipe import (
     MedicalReasoning3StepsRecipe,
 )
+from medical_llm_workflow.Domain.recipes.all_recipes.two_stage_verification_recipe import (
+    TwoStageVerificationRecipe,
+)
 from medical_llm_workflow.Infrastructure.LLM_client import BaseChatbotConfig
 
 
@@ -16,6 +19,7 @@ class RecipeFactory:
 
     _recipes: Dict[RecipeType, RecipeCallable] = {
         RecipeType.MEDICAL_REASONING_3_STEPS: MedicalReasoning3StepsRecipe,
+        RecipeType.TWO_STAGE_VERIFICATION: TwoStageVerificationRecipe,
         # RecipeType.MEDICAL_REASONING_FAST_2_STEPS: MedicalReasoningFast2StepsRecipe(),
         # RecipeType.MEDICAL_REASONING_ITERATIVE_4_STEPS: MedicalReasoningIterative4StepsRecipe(),
     }
@@ -29,7 +33,7 @@ class RecipeFactory:
         """获取 recipe 实例。"""
         recipe_cls = cls._recipes.get(recipe_type)
         if recipe_cls is None:
-            raise ValueError(f"Unsupported recipe type: {recipe_type}")
+            raise ValueError(f"指定的 RecipeType: {recipe_type} 加载失败，找不到工厂映射，请检查代码注入。")
         
         recipe = recipe_cls(chatbot_config=chatbot_config) # 目前先直接实例化，之后如果需要的话再改成单例模式
 

@@ -62,6 +62,8 @@ class PoeClient(BaseLLMClient):
             chunks.append(" a")
             chunks.append(" fake")
             chunks.append(" response.")
+            # .sleep(1)  # 模拟网络延迟
+            
             return "".join(chunks)
         
         print_log("Calling Poe API...", prefix="[LLM]", debug=True)

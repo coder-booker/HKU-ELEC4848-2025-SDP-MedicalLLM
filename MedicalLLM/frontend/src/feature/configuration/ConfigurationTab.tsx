@@ -121,11 +121,12 @@ export function ConfigurationTab(props: ConfigurationTabProps) {
               <label className="font-semibold text-gray-700">Load Recipe Strategy</label>
               <div className="flex flex-col gap-3">
                 <select
-                  value={recipeType}
+                  value={recipeType || ""}
                   onChange={handleRecipeChange}
-                  className="border rounded-md p-1.5 w-full"
+                  className="border rounded-md p-1.5 w-full text-gray-700"
                   disabled={isRunning || hasRun}
                 >
+                  <option value="" disabled hidden>-- Please select a recipe --</option>
                   <option value="custom" disabled hidden>-- Custom Pipeline (Unsaved) --</option>
                   {options?.recipes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>

@@ -60,7 +60,7 @@ export function TaskCard({
     <>
       <div
         onClick={handleOpenConfig}
-        className={`relative border rounded-xl p-5 flex flex-col gap-4 transition-colors shrink-0 snap-center w-[350px] cursor-pointer hover:shadow-md h-full ${taskState?.status === "running"
+        className={`relative border rounded-xl p-5 flex flex-col gap-4 transition-colors shrink-0 snap-center w-[350px] cursor-pointer hover:shadow-md ${taskState?.status === "running"
             ? "bg-yellow-50 border-yellow-300 shadow-[0_0_15px_rgba(253,224,71,0.3)]"
             : taskState?.status === "completed"
               ? "bg-green-50 border-green-300"
