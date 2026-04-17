@@ -14,6 +14,7 @@ from medical_llm_workflow.Domain.benchmark.Evaluator.models import (
 from medical_llm_workflow.Infrastructure.LLM_client.client_factory import ClientFactory
 from medical_llm_workflow.Infrastructure.LLM_client.models import ChatbotType, PoeChatbotModel
 from medical_llm_workflow.Infrastructure.llm_json_utils import call_llm_with_json_retry
+from medical_llm_workflow.utils import print_log
 from medical_llm_workflow.schemas.models import ConversationMessageRole, ConversationMessageStatus
 
 
@@ -96,6 +97,7 @@ Example: {{"score": 5}}
                 chatbot_config=chatbot_config,
                 max_retries=1,
             )
+            print_log(f"LLM parsed response: {parsed_data}", prefix="[DEBUG]")
             
             if "error" in parsed_data:
                 return 0.0, {

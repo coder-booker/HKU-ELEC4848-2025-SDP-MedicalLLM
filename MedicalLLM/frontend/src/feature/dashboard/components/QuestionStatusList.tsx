@@ -1,5 +1,5 @@
 import React from "react";
-import { QuestionStatus } from "../types";
+import { QuestionStatus } from "../../../types";
 
 interface QuestionStatusListProps {
   questions: QuestionStatus[];

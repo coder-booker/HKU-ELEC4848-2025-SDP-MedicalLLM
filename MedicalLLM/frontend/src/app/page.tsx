@@ -2,27 +2,28 @@
 
 import { useState, useEffect } from "react";
 
-
-import { DATASET_CONTEXT_ID } from "../components/PromptEditor";
-import { TaskCard } from "../components/TaskCard";
-import { SmartExtractorCard } from "../components/SmartExtractorCard";
-import { QuestionStatusList } from "../components/QuestionStatusList";
-import { QuestionDetailView } from "../components/QuestionDetailView";
-import { EvaluationDashboard } from "../components/EvaluationDashboard";
-import { DatasetConfigurator, DatasetConfigPayload } from "../components/DatasetConfigurator";
+import { DatasetConfigPayload } from "../feature/configuration/components/DatasetConfigurator";
+import { ConfigurationTab } from "../feature/configuration/ConfigurationTab";
+import { DashboardTab } from "../feature/dashboard/DashboardTab";
 import { TaskConfig, QuestionStatus, TaskState, OptionsState, RecipeOption } from "../types";
+import { ProgressBar } from "../core/ProgressBar";
+
+// ============================================================================
+// 文件级注释：这是系统的主页面，负责管理整个医疗大语言模型工作流的生命周期和界面展示。
+// 目前使用 Tab 切换设计：Config（配置与任务），Dashboard（左右分屏监控态）
+// ============================================================================
 
 type WorkflowPhase = "idle" | "dataset" | "execution" | "evaluation" | "completed";
 
 // 全局工作流状态
 type WorkflowState = {
-  phase: WorkflowPhase;
-  message: string;
-  currentQuestion: number;
-  totalQuestions: number;
-  runId: string;
-  questions: QuestionStatus[];
-  tasks: Record<string, TaskState>;
+  phase: WorkflowPhase,
+  message: string,
+  currentQuestion: number,
+  totalQuestions: number,
+  runId: string,
+  questions: QuestionStatus[],
+  tasks: Record<string, TaskState>,
 };
 
 
@@ -33,6 +34,9 @@ export default function Home() {
   const [evaluationData, setEvaluationData] = useState<any>(null);
   const [error, setError] = useState<string>("");
   
+  // 对于新需求：全局控制当前激活的页面 Tab
+  const [activeTab, setActiveTab] = useState<"config" | "running">("config");
+
   // 对于新需求：点击列表进入详细弹层
   const [selectedQuestion, setSelectedQuestion] = useState<QuestionStatus | null>(null);
   const [questionDetail, setQuestionDetail] = useState<any>(null); // 保存请求来的结构化日志
@@ -118,8 +122,10 @@ export default function Home() {
       setHasRun(false);
       setIsRunning(false);
       setError("");
+      setActiveTab("config");
       setSelectedQuestion(null);
       setQuestionDetail(null);
+      setEvaluationData(null);
       setWorkflowState({
         phase: "idle",
         message: "",
@@ -174,7 +180,7 @@ export default function Home() {
   };
 
   const getAvailableTags = (currentIdx: number) => {
-    const tags = [DATASET_CONTEXT_ID];
+    const tags = ["question_task"]; // Dataset Context ID hardcoded temporarily for decoupled import
     tasks.forEach((t, i) => {
       // 只有在当前任务之前的任务才能作为依赖来源 (不能选用还没跑的任务输出)
       if (i < currentIdx && t.id) {
@@ -279,6 +285,7 @@ export default function Home() {
     setIsRunning(true);
     setHasRun(true);
     setError("");
+    setActiveTab("running");
 
     // 初始化卡片流状态
     setWorkflowState({
@@ -425,6 +432,12 @@ export default function Home() {
                     });
                   }
                 } else if (eventType === "QUESTION_FAILED") {
+                  if (eventData.completed_questions !== undefined) {
+                    newState.currentQuestion = eventData.completed_questions;
+                  }
+                  if (eventData.total_questions !== undefined) {
+                    newState.totalQuestions = eventData.total_questions;
+                  }
                   const qIdx = eventData.question_index;
                   const dType = eventData.dataset_type;
                     const errorMsg = eventData.error || "Unknown Error";
@@ -467,6 +480,36 @@ export default function Home() {
       const response = await fetch(`http://localhost:8000/api/results/${workflowState.runId}/${qStatus.datasetType}/${qStatus.index}`);
       if (response.ok) {
         const data = await response.json();
+        
+        // 检查所有任务的 output 是否包含 error 字样，如果有，更新当前题目的视觉状态
+        let hasTaskError = false;
+        if (data.tasks && Array.isArray(data.tasks)) {
+          for (const task of data.tasks) {
+            if (task.outputs && Array.isArray(task.outputs)) {
+              for (const outMsg of task.outputs) {
+                if (outMsg.content && typeof outMsg.content === 'string' && outMsg.content.toLowerCase().includes('error')) {
+                  hasTaskError = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        if (hasTaskError && qStatus.status !== "failed") {
+          // 如果找到了任务中的错误，我们在前端强制将此题状态也打上 failed，方便 UI 渲染
+          setWorkflowState(prev => {
+            const newState = { ...prev };
+            const q = newState.questions.find(q => q.index === qStatus.index && q.datasetType === qStatus.datasetType);
+            if (q) {
+              q.status = "failed";
+              if (!q.error) q.error = "A task reported an error during execution.";
+            }
+            return newState;
+          });
+          data.error = data.error || "A task reported an error during execution.";
+        }
+        
         setQuestionDetail(data);
       } else {
         console.error("Failed to fetch question detail.");
@@ -492,265 +535,99 @@ export default function Home() {
   const isFailure = hasFailedQuestion || isWorkflowError;
 
   return (
-    <main className="min-h-screen p-4 bg-gray-50 text-gray-900 font-sans">
-      <div className="max-w-7xl mx-auto flex flex-col gap-4">
-
-        {/* 顶部控制面板及工作流全局状态 */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-4">
+    <main className="h-screen flex flex-col bg-gray-50 text-gray-900 font-sans overflow-hidden">
+      {/* 顶部控制面板及工作流全局状态（固定高度） */}
+      <div className="bg-white px-4 pt-4 shadow-sm shrink-0 z-10 flex flex-col gap-3">
+        <div className="max-w-7xl mx-auto w-full flex flex-col gap-3">
+          <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">Medical LLM Workflow</h1>
               <p className="text-sm text-gray-500 mt-1">Configure and observe the reasoning pipeline.</p>
             </div>
-            <div className="flex gap-2">
-              {hasRun && (
-                <button
-                  onClick={handleReset}
-                  className="px-6 py-2 rounded-lg font-medium transition-all bg-gray-50 text-red-600 border border-red-200 hover:bg-red-50 hover:border-red-300 shadow-sm"
-                >
-                  Reset Pipeline
-                </button>
-              )}
-              <button
-                onClick={handleStartWorkflow}
-                disabled={isRunning || !options || hasRun}
-                className={`px-6 py-2 rounded-lg font-medium transition-all ${isRunning || !options || hasRun
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                    : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-                  }`}
-              >
-                {isRunning ? "Running pipeline..." : "Start Workflow"}
-              </button>
-            </div>
+            {/* 顶栏留空或放一些全局配置信息 */}
           </div>
 
-          <details className="group mb-4" open={!isRunning && !hasRun}>
-            <summary className="text-sm font-bold text-gray-700 cursor-pointer select-none pb-2 border-b border-gray-100 mb-4 hover:text-blue-600 transition-colors">
-              Configuration Options
-            </summary>
-            
-            {/* Disabled UI Wrapper */}
-            <div className={`relative transition-all duration-300 ${isRunning || hasRun ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-              
-              {/* Invisible overlay capturing pointer events to show cursor and tooltip */}
-              {(isRunning || hasRun) && (
-                <div 
-                  className="absolute inset-0 z-10 pointer-events-auto cursor-not-allowed" 
-                  title="运行已开始或已完成，请重置 Workflow 才能修改配置"
-                />
-              )}
+          {/* 全局状态条，使用单独提取的组件 */}
+          <ProgressBar
+            isFailure={isFailure}
+            phase={workflowState.phase}
+            currentQuestion={workflowState.currentQuestion}
+            totalQuestions={workflowState.totalQuestions}
+            message={workflowState.message}
+            isWorkflowError={isWorkflowError}
+          />
 
-              <div className="flex flex-col gap-6 text-sm mt-2">
-                <DatasetConfigurator 
-                  configs={datasetConfigs}
-                  onChange={setDatasetConfigs}
-                  availableDatasets={options?.datasets || []}
-                  availableEvaluators={options?.evaluators || []}
-                  options={options}
-                  disabled={isRunning || hasRun}
-                />
-
-                {/* Recipe Strategy */}
-                <div className="flex flex-col gap-2 mt-2 pt-4 border-t border-gray-100">
-                  <label className="font-semibold text-gray-700">Load Recipe Strategy</label>
-                  <div className="flex items-center gap-3">
-                    <select
-                      value={recipeType}
-                      onChange={handleRecipeChange}
-                      className="border rounded-md p-1.5 flex-1 max-w-sm"
-                      disabled={isRunning || hasRun}
-                    >
-                      <option value="custom" disabled hidden>-- Custom Pipeline (Unsaved) --</option>
-                      {options?.recipes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <button
-                      onClick={handleApplyRecipe}
-                      disabled={isRunning || hasRun || recipeType === "custom"}
-                      className="px-4 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-medium transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed shadow-sm"
-                    >
-                      Apply & Overwrite Tasks
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500">Applying a recipe will completely replace your current tasks setup.</p>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          {/* 全局状态条，折叠配置后依然可见 */}
-          <div className={`relative overflow-hidden flex items-center justify-between p-3 rounded-lg border transition-colors ${
-            isFailure ? 'border-red-500 bg-red-500' :
-            workflowState.phase === 'completed' ? 'border-green-500 bg-green-500' : 'border-blue-100 bg-blue-50'
-          }`}>
-            {/* 进度条层 */}
-            <div 
-              className={`absolute left-0 top-0 bottom-0 transition-all duration-500 ease-out ${
-                isFailure 
-                ? 'bg-red-500' 
-                : workflowState.phase === 'completed' 
-                  ? 'bg-green-500'
-                  : 'bg-green-300 opacity-60'
-              }`}
-              style={{ 
-                width: isFailure && workflowState.phase !== 'completed'
-                  ? '100%' 
-                  : workflowState.phase === 'completed' || workflowState.phase === 'evaluation' 
-                    ? '100%' 
-                    : `${workflowState.totalQuestions > 0 ? (workflowState.currentQuestion / workflowState.totalQuestions) * 100 : 0}%`
-              }}
-            />
-
-            <div className="relative z-10 flex items-center gap-4">
-              <span className={`text-xs font-semibold uppercase tracking-wider block ${
-                isFailure ? 'text-red-100' :
-                workflowState.phase === 'completed' ? 'text-green-100' : 'text-blue-700'
-              }`}>Phase:</span>
-              <span className={`text-sm font-bold ${
-                isFailure || workflowState.phase === 'completed' ? 'text-white' : 'text-blue-900'
-              }`}>
-                {isWorkflowError ? 'Workflow Stopped on Error' :
-                workflowState.phase === 'idle' ? 'Ready to Start' :
-                  workflowState.phase === 'dataset' ? 'Processing Dataset' :
-                    workflowState.phase === 'execution' ? 'Executing Tasks' :
-                      workflowState.phase === 'evaluation' ? 'Evaluating Results' :
-                        (hasFailedQuestion ? 'Completed with Errors' : 'Successfully Completed')}
-              </span>
-              <span className={`text-sm block ml-4 border-l pl-4 ${
-                isFailure ? 'text-red-100 border-red-400' :
-                workflowState.phase === 'completed' ? 'text-green-100 border-green-300' : 'text-blue-600 border-blue-200'
-              }`}>{workflowState.message || "Waiting state..."}</span>
-            </div>
-
-            {workflowState.totalQuestions > 0 && (
-              <div className="relative z-10 flex items-center gap-3">
-                <span className={`text-xs font-semibold uppercase tracking-wider ${
-                  isFailure ? 'text-red-100' :
-                  workflowState.phase === 'completed' ? 'text-green-100' : 'text-blue-700'
-                }`}>Completed:</span>
-                <span className={`text-sm font-bold bg-white px-2 py-0.5 rounded shadow-sm ${
-                  isFailure ? 'text-red-700' :
-                  workflowState.phase === 'completed' ? 'text-green-600' : 'text-blue-900'
-                }`}>
-                  {workflowState.currentQuestion} / {workflowState.totalQuestions}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Question Execution Status Section (Only visible when workflow has run/is running) */}
-        {(hasRun || isRunning) && (
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-800">
-                {selectedQuestion ? `Question Detail: ${selectedQuestion.datasetType} #${selectedQuestion.index}` : "Execution Progress (Per Question)"}
-              </h2>
-              {selectedQuestion && (
-                <button
-                  onClick={handleBackToList}
-                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 transition"
-                >
-                  ← Back to List
-                </button>
-              )}
-            </div>
-
-            {/* 全局顶部错误提示框 */}
-            {error && !selectedQuestion && (
-              <div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 shadow-sm">
-                <h3 className="font-bold mb-1 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
-                  Workflow Error
-                </h3>
-                <p className="text-sm font-mono whitespace-pre-wrap ml-7">{error}</p>
-              </div>
-            )}
-
-            {!selectedQuestion ? (
-              <QuestionStatusList
-                questions={workflowState.questions}
-                onViewDetail={handleViewDetail}
-              />
-            ) : (
-              <QuestionDetailView questionDetail={questionDetail} />
-            )}
-          </div>
-        )}
-
-        {/* 工作流任务与结果组合区域 */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-800">Tasks Pipeline & Details</h2>
+          {/* 顶层页签切换区 - 类似浏览器Tab放置于下方 */}
+          <div className="flex mt-1 -mb-px">
             <button
-              onClick={handleAddTask}
-              disabled={isRunning || hasRun}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${isRunning || hasRun ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
+              onClick={() => setActiveTab("config")}
+              className={`px-5 py-2 text-sm font-medium transition-all rounded-t-lg border-t border-l border-r ${
+                activeTab === "config" 
+                  ? "bg-gray-50 text-blue-600 border-gray-200 border-b-gray-50 -mb-px" 
+                  : "bg-white text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              + Add Task
+              Configuration
+            </button>
+            <button
+              onClick={() => setActiveTab("running")}
+              disabled={!isRunning && !hasRun}
+              className={`px-5 py-2 text-sm font-medium transition-all rounded-t-lg border-t border-l border-r ml-2 ${
+                !isRunning && !hasRun ? "opacity-50 cursor-not-allowed" : ""
+              } ${
+                activeTab === "running" 
+                  ? "bg-gray-50 text-blue-600 border-gray-200 border-b-gray-50 -mb-px" 
+                  : "bg-white text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              Dashboard
             </button>
           </div>
-
-          {tasks.length === 0 && (
-            <div className="text-gray-400 text-sm italic py-2">No tasks defined. Load a recipe or add a custom task.</div>
-          )}
-
-          <div className="flex flex-row gap-5 overflow-x-auto pb-4 snap-x snap-mandatory">
-            {tasks.map((task, idx) => (
-              <TaskCard
-                key={`${task.id}-${idx}`}
-                task={task}
-                taskState={workflowState.tasks[task.id]}
-                idx={idx}
-                isRunning={isRunning || hasRun}
-                availableTags={getAvailableTags(idx)}
-                options={options}
-                onTaskChange={handleTaskChange}
-                  onRemove={() => handleRemoveTask(idx)}
-                onMoveUp={() => handleMoveTask(idx, 'up')}
-                onMoveDown={() => handleMoveTask(idx, 'down')}
-                isFirst={idx === 0}
-                isLast={idx === tasks.length - 1}
-              />
-            ))}
-            
-            {activeEvaluators.length > 0 && (
-              <SmartExtractorCard
-                config={extractorConfig}
-                isRunning={isRunning || hasRun}
-                options={options}
-                evaluatorsEnablingExtraction={activeEvaluators}
-                onChange={handleExtractorChange}
-              />
-            )}
-          </div>
         </div>
+      </div>
 
-        {/* 最终评估报告折叠面板 */}
-        {(hasRun || isRunning) && (
-          <details className="group bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100" open={evaluationData && evaluationData.length > 0}>
-            <summary className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center cursor-pointer select-none hover:bg-gray-100 transition-colors">
-              <span className="font-bold text-gray-800">Final Evaluation Report</span>
-              {hasRun && (
-                <button
-                  type="button"
-                  onClick={handleDownloadLatestReport}
-                  className="px-4 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-md shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 flex items-center justify-center gap-2"
-                  title="Download the latest evaluation report folder as ZIP"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Download Report (.zip)
-                </button>
-              )}
-            </summary>
+      {/* 主工作区 - 以相对定位支持内部 Tab 控制 */}
+      <div className="flex-1 relative overflow-hidden bg-gray-50 border-t border-gray-200">
 
-            <div className="p-6 overflow-y-auto max-h-[70vh]">
-              <EvaluationDashboard evaluationData={evaluationData} />
-            </div>
-          </details>
+        {/* Tab 1: Configuration */}
+        {activeTab === "config" && (
+          <ConfigurationTab
+            datasetConfigs={datasetConfigs}
+            setDatasetConfigs={setDatasetConfigs}
+            options={options}
+            isRunning={isRunning}
+            hasRun={hasRun}
+            recipeType={recipeType}
+            handleRecipeChange={handleRecipeChange}
+            handleApplyRecipe={handleApplyRecipe}
+            tasks={tasks}
+            handleAddTask={handleAddTask}
+            workflowStateTasks={workflowState.tasks}
+            getAvailableTags={getAvailableTags}
+            handleTaskChange={handleTaskChange}
+            handleRemoveTask={handleRemoveTask}
+            handleMoveTask={handleMoveTask}
+            activeEvaluators={activeEvaluators}
+            extractorConfig={extractorConfig}
+            handleExtractorChange={handleExtractorChange}
+            handleStartWorkflow={handleStartWorkflow}
+            handleReset={handleReset}
+          />
+        )}
+
+        {/* Tab 2: Dashboard (Running & Eval) */}
+        {activeTab === "running" && (
+          <DashboardTab
+            selectedQuestion={selectedQuestion}
+            questions={workflowState.questions}
+            handleBackToList={handleBackToList}
+            error={error}
+            handleViewDetail={handleViewDetail}
+            questionDetail={questionDetail}
+            hasRun={hasRun}
+            handleDownloadLatestReport={handleDownloadLatestReport}
+            evaluationData={evaluationData}
+          />
         )}
 
       </div>

@@ -461,16 +461,38 @@ class Workflow:
                 
                 progress_state["completed"] += 1
                 
-                # 向前端抛出题目完成进度以及该题的基本信息
-                emit_event(
-                    "QUESTION_COMPLETED",
-                    {
-                        "completed_questions": progress_state["completed"],
-                        "total_questions": total_questions,
-                        "question_index": display_index,
-                        "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
-                    },
-                )
+                # 检查 context 中的所有 task record，有没有 error 或者包含 "error" 的情况
+                has_error = False
+                for record in context.get_all_records():
+                    for task_output in record.get("task_context", {}).get("output", []):
+                        if isinstance(task_output.get("content"), str) and "error" in task_output["content"].lower():
+                            has_error = True
+                            break
+                    if has_error:
+                        break
+
+                # 向前端抛出题目完成进度以及该题的基本信息（包含是否发生内部错误）
+                if has_error:
+                    emit_event(
+                        "QUESTION_FAILED",
+                        {
+                            "completed_questions": progress_state["completed"],
+                            "total_questions": total_questions,
+                            "question_index": display_index,
+                            "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                            "error": "A task reported an error during execution."
+                        },
+                    )
+                else:
+                    emit_event(
+                        "QUESTION_COMPLETED",
+                        {
+                            "completed_questions": progress_state["completed"],
+                            "total_questions": total_questions,
+                            "question_index": display_index,
+                            "dataset_type": current_dataset.value if hasattr(current_dataset, "value") else current_dataset,
+                        },
+                    )
                 return context
             except Exception as e:
                 print_log(f"Error processing question {display_index}: {e}", prefix="[ERROR]")

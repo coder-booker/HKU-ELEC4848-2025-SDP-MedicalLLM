@@ -33,6 +33,7 @@ async def call_llm_with_json_retry(
     for attempt in range(max_retries + 1):
         try:
             response = await client.call_chatbot(current_messages, chatbot_config)
+            # print_log(f"LLM raw response: {response}", prefix="[DEBUG]")
             
             # Rule base filtering: 忽略不是花括号的内容
             text = response.strip()
@@ -55,7 +56,7 @@ async def call_llm_with_json_retry(
             return parsed
             
         except json.JSONDecodeError as e:
-            last_error = f"JSON parsing failed: {str(e)} | Raw response: {response}"
+            last_error = f"[ERROR] JSON parsing failed: {str(e)} | Raw response: {response}"
             if attempt < max_retries:
                 current_messages.append(
                     {

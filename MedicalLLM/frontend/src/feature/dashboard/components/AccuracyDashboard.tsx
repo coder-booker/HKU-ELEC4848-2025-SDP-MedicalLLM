@@ -1,7 +1,4 @@
-import React from "react";
-
-
-import { EvluationBatchResult, AccuracySummary } from "../../types";
+import { EvluationBatchResult, AccuracySummary } from "@/types";
 
 
 /**

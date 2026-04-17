@@ -8,7 +8,7 @@ from enum import Enum
 import uuid
 
 
-class EvaluatorType(str, Enum):
+class EvaluatorType(Enum):
     """内置评估器类型。"""
 
     ACCURACY = "accuracy"
@@ -32,7 +32,7 @@ class EvaluationSample(TypedDict):
 
 from enum import Enum
 
-class EvaluatorDisplayType(str, Enum):
+class EvaluatorDisplayType(Enum):
     PERCENTAGE = "percentage"
     BAR_CHART = "bar_chart"
     MIXED = "mixed"

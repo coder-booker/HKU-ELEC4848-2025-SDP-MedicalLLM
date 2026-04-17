@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from "react";
 
 
-import { EvaluationRunOutput } from "../types";
-import { AccuracyDashboard } from "./dashboard/AccuracyDashboard";
-import { PrecisionDashboard } from "./dashboard/PrecisionDashboard";
-import { BaseDashboard } from "./dashboard/BaseDashboard";
+import { EvaluationRunOutput } from "../../../types";
+import { AccuracyDashboard } from "./AccuracyDashboard";
+import { PrecisionDashboard } from "./PrecisionDashboard";
+import { BaseDashboard } from "./BaseDashboard";
 
 
 /**

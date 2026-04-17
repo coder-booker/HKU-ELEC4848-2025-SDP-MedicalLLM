@@ -48,7 +48,7 @@ class PoeClient(BaseLLMClient):
         for msg in messages:
             fp_messages.append(
                 fp.ProtocolMessage(
-                    role=msg["role"].value,
+                    role=msg["role"],
                     content=msg["content"]
                 )
             )
@@ -76,7 +76,7 @@ class PoeClient(BaseLLMClient):
                 async def _fetch_stream():
                     async for part in fp.get_bot_response(
                         messages=fp_messages,
-                        bot_name=chatbot_config["model"].value,
+                        bot_name=chatbot_config["model"],
                         api_key=self.api_key,
                     ):
                         if part.text:
