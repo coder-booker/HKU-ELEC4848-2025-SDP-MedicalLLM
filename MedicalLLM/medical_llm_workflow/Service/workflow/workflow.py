@@ -465,7 +465,7 @@ class Workflow:
                 has_error = False
                 for record in context.get_all_records():
                     for task_output in record.get("task_context", {}).get("output", []):
-                        if isinstance(task_output.get("content"), str) and "error" in task_output["content"].lower():
+                        if task_output["status"] == ConversationMessageStatus.FAILED:
                             has_error = True
                             break
                     if has_error:

@@ -29,18 +29,15 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
 
   const handleAddDataset = () => {
     if (disabled || availableDatasets.length === 0) return;
-    
     // Pick the first available dataset not already in the list if possible
     const unusedDatasets = availableDatasets.filter(ds => !configs.some(c => c.dataset_type === ds.value));
     const dsToAdd = unusedDatasets.length > 0 ? unusedDatasets[0] : availableDatasets[0];
-    
     const newConfig: DatasetConfigPayload = {
       dataset_type: dsToAdd.value,
       num_of_questions: 4,
       evaluator_types: dsToAdd.supportedEvaluators ? [...dsToAdd.supportedEvaluators] : [],
       evaluator_configs: {},
     };
-    
     onChange([...configs, newConfig]);
   };
 
@@ -148,17 +145,19 @@ export const DatasetConfigurator: React.FC<DatasetConfiguratorProps> = ({
                 </div>
 
                 {/* Number of Questions */}
-                <div className="flex items-center justify-between gap-3">
-                  <label className="font-medium text-gray-500 text-[11px] uppercase tracking-wider w-20 shrink-0">Limit (#)</label>
-                  <input
-                    type="number"
-                    value={config.num_of_questions}
-                    onChange={(e) => updateConfig(idx, { num_of_questions: Number(e.target.value) })}
-                    min={1}
-                    max={50}
-                    disabled={disabled}
-                    className="border rounded-md p-1.5 w-full bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
-                  />
+                <div className="flex flex-col gap-1 w-full">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="font-medium text-gray-500 text-[11px] uppercase tracking-wider w-20 shrink-0">Limit (#)</label>
+                    <input
+                      type="number"
+                      value={config.num_of_questions}
+                      onChange={(e) => updateConfig(idx, { num_of_questions: Math.max(1, Math.min(50, Number(e.target.value))) })}
+                      min={1}
+                      max={50}
+                      disabled={disabled}
+                      className="border rounded-md p-1.5 w-full bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
+                    />
+                  </div>
                 </div>
               </div>
 

@@ -37,12 +37,12 @@ export function AccuracyDashboard({ result }: AccuracyDashboardProps) {
         </div>
         
         <div className="bg-green-50 text-green-800 px-4 py-2 rounded-lg border border-green-100 flex flex-col justify-center items-start text-left">
-          <span className="text-[10px] uppercase font-semibold text-green-500">Correct Calls</span>
+          <span className="text-[10px] uppercase font-semibold text-green-500">Hits</span>
           <span className="text-lg font-bold">{summary.hit_count || 0}</span>
         </div>
 
         <div className="bg-red-50 text-red-800 px-4 py-2 rounded-lg border border-red-100 flex flex-col justify-center items-start text-left">
-          <span className="text-[10px] uppercase font-semibold text-red-400">Incorrect Calls</span>
+          <span className="text-[10px] uppercase font-semibold text-red-400">Miss</span>
           <span className="text-lg font-bold">{summary.miss_count || 0}</span>
         </div>
       </div>
